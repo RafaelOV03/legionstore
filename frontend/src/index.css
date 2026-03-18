@@ -1,0 +1,26 @@
+/* Tema Oscuro - Paleta Tecnológica */
+:root {
+  --primary-color: #4d9eff;
+  --secondary-color: #a0aec0;
+  --success-color: #48bb78;
+  --info-color: #4fd1c5;
+  --warning-color: #fbd38d;
+  --danger-color: #fc8181;
+  --bg-dark: #0a0e27;
+  --bg-darker: #060815;
+  --bg-card: #1a1f3a;
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e0;
+  --text-muted: #a0aec0;
+  --border-color: #2d3561;
+  --glow-color: rgba(77, 158, 255, 0.5);
+}
+
+/* Fix para dropdown menu siempre encima */
+.dropdown-menu {
+  z-index: 9999 !important;
+}
+
+.navbar {
+  z-index: 1030 !important;
+}

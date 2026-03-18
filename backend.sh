@@ -1,0 +1,1 @@
+cd backend && go build -o ../build && cd ../build && ./backend

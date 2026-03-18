@@ -1,0 +1,396 @@
+const API_URL = 'http://localhost:8080/api';
+
+// Obtener el token de localStorage
+const getAuthHeader = () => {
+  const token = localStorage.getItem('token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+};
+
+// Helper para hacer peticiones autenticadas
+const authFetch = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader(),
+      ...options.headers,
+    },
+  });
+
+  // Handle 401 Unauthorized - token expired or invalid
+  if (response.status === 401) {
+    // Clear stored credentials
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    // Redirect to login page
+    window.location.href = '/login';
+    throw new Error('Session expired. Please login again.');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || 'Request failed');
+  }
+
+  return response.json();
+};
+
+// ==========================================
+// AUTENTICACIÓN
+// ==========================================
+export const login = async (email, password) => {
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Login failed');
+  }
+
+  return response.json();
+};
+
+export const register = async (userData) => {
+  const response = await fetch(`${API_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Registration failed');
+  }
+
+  return response.json();
+};
+
+export const getCurrentUser = async () => {
+  return authFetch(`${API_URL}/auth/me`);
+};
+
+// ==========================================
+// PRODUCTOS
+// ==========================================
+export const getProducts = () => authFetch(`${API_URL}/products`);
+export const getProduct = (id) => authFetch(`${API_URL}/products/${id}`);
+export const createProduct = (product) => authFetch(`${API_URL}/products`, {
+  method: 'POST',
+  body: JSON.stringify(product),
+});
+export const updateProduct = (id, product) => authFetch(`${API_URL}/products/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(product),
+});
+export const deleteProduct = (id) => authFetch(`${API_URL}/products/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// SEDES Y STOCK
+// ==========================================
+export const getSedes = () => authFetch(`${API_URL}/sedes`);
+export const getSede = (id) => authFetch(`${API_URL}/sedes/${id}`);
+export const createSede = (sede) => authFetch(`${API_URL}/sedes`, {
+  method: 'POST',
+  body: JSON.stringify(sede),
+});
+export const updateSede = (id, sede) => authFetch(`${API_URL}/sedes/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(sede),
+});
+export const deleteSede = (id) => authFetch(`${API_URL}/sedes/${id}`, {
+  method: 'DELETE',
+});
+
+// Stock multisede
+export const getStockMultisede = () => authFetch(`${API_URL}/stock`);
+export const getStockBySede = (sedeId) => authFetch(`${API_URL}/stock/sede/${sedeId}`);
+export const updateStock = (stockData) => authFetch(`${API_URL}/stock`, {
+  method: 'PUT',
+  body: JSON.stringify(stockData),
+});
+
+// ==========================================
+// RMA / GARANTÍAS
+// ==========================================
+export const getRMAs = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/rmas${query ? '?' + query : ''}`);
+};
+export const getRMA = (id) => authFetch(`${API_URL}/rmas/${id}`);
+export const getRMAStats = () => authFetch(`${API_URL}/rmas/stats`);
+export const createRMA = (rma) => authFetch(`${API_URL}/rmas`, {
+  method: 'POST',
+  body: JSON.stringify(rma),
+});
+export const updateRMA = (id, rma) => authFetch(`${API_URL}/rmas/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(rma),
+});
+export const deleteRMA = (id) => authFetch(`${API_URL}/rmas/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// COTIZACIONES
+// ==========================================
+export const getCotizaciones = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/cotizaciones${query ? '?' + query : ''}`);
+};
+export const getCotizacion = (id) => authFetch(`${API_URL}/cotizaciones/${id}`);
+export const getCotizacionPDF = (id) => authFetch(`${API_URL}/cotizaciones/${id}/pdf`);
+export const createCotizacion = (cotizacion) => authFetch(`${API_URL}/cotizaciones`, {
+  method: 'POST',
+  body: JSON.stringify(cotizacion),
+});
+export const updateCotizacionEstado = (id, estado) => authFetch(`${API_URL}/cotizaciones/${id}/estado`, {
+  method: 'PUT',
+  body: JSON.stringify({ estado }),
+});
+export const convertirCotizacion = (id) => authFetch(`${API_URL}/cotizaciones/${id}/convertir`, {
+  method: 'POST',
+});
+export const convertirCotizacionAVenta = convertirCotizacion; // Alias
+export const deleteCotizacion = (id) => authFetch(`${API_URL}/cotizaciones/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// TRASPASOS
+// ==========================================
+export const getTraspasos = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/traspasos${query ? '?' + query : ''}`);
+};
+export const getTraspaso = (id) => authFetch(`${API_URL}/traspasos/${id}`);
+export const createTraspaso = (traspaso) => authFetch(`${API_URL}/traspasos`, {
+  method: 'POST',
+  body: JSON.stringify(traspaso),
+});
+export const enviarTraspaso = (id) => authFetch(`${API_URL}/traspasos/${id}/enviar`, {
+  method: 'POST',
+});
+export const recibirTraspaso = (id, data) => authFetch(`${API_URL}/traspasos/${id}/recibir`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+export const cancelarTraspaso = (id) => authFetch(`${API_URL}/traspasos/${id}/cancelar`, {
+  method: 'POST',
+});
+export const deleteTraspaso = (id) => authFetch(`${API_URL}/traspasos/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// ÓRDENES DE TRABAJO
+// ==========================================
+export const getOrdenesTrabajo = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/ordenes-trabajo${query ? '?' + query : ''}`);
+};
+export const getOrdenTrabajo = (id) => authFetch(`${API_URL}/ordenes-trabajo/${id}`);
+export const getOrdenesStats = () => authFetch(`${API_URL}/ordenes-trabajo/stats`);
+export const getTecnicos = () => authFetch(`${API_URL}/ordenes-trabajo/tecnicos`);
+export const createOrdenTrabajo = (orden) => authFetch(`${API_URL}/ordenes-trabajo`, {
+  method: 'POST',
+  body: JSON.stringify(orden),
+});
+export const updateOrdenTrabajo = (id, orden) => authFetch(`${API_URL}/ordenes-trabajo/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(orden),
+});
+export const asignarTecnico = (id, tecnicoId) => authFetch(`${API_URL}/ordenes-trabajo/${id}/asignar`, {
+  method: 'POST',
+  body: JSON.stringify({ tecnico_id: tecnicoId }),
+});
+export const agregarInsumo = (id, insumoData) => authFetch(`${API_URL}/ordenes-trabajo/${id}/insumo`, {
+  method: 'POST',
+  body: JSON.stringify(insumoData),
+});
+export const agregarInsumoOrden = agregarInsumo; // Alias
+export const registrarTrazabilidad = (id, data) => authFetch(`${API_URL}/ordenes-trabajo/${id}/trazabilidad`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+export const deleteOrdenTrabajo = (id) => authFetch(`${API_URL}/ordenes-trabajo/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// PROVEEDORES
+// ==========================================
+export const getProveedores = () => authFetch(`${API_URL}/proveedores`);
+export const getProveedor = (id) => authFetch(`${API_URL}/proveedores/${id}`);
+export const createProveedor = (proveedor) => authFetch(`${API_URL}/proveedores`, {
+  method: 'POST',
+  body: JSON.stringify(proveedor),
+});
+export const updateProveedor = (id, proveedor) => authFetch(`${API_URL}/proveedores/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(proveedor),
+});
+export const deleteProveedor = (id) => authFetch(`${API_URL}/proveedores/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// DEUDAS Y PAGOS
+// ==========================================
+export const getDeudas = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/deudas${query ? '?' + query : ''}`);
+};
+export const getResumenDeudas = () => authFetch(`${API_URL}/deudas/resumen`);
+export const createDeuda = (deuda) => authFetch(`${API_URL}/deudas`, {
+  method: 'POST',
+  body: JSON.stringify(deuda),
+});
+export const registrarPago = (deudaId, pago) => authFetch(`${API_URL}/deudas/${deudaId}/pago`, {
+  method: 'POST',
+  body: JSON.stringify(pago),
+});
+export const getPagosDeuda = (deudaId) => authFetch(`${API_URL}/deudas/${deudaId}/pagos`);
+
+// ==========================================
+// INSUMOS
+// ==========================================
+export const getInsumos = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/insumos${query ? '?' + query : ''}`);
+};
+export const getInsumo = (id) => authFetch(`${API_URL}/insumos/${id}`);
+export const getInsumosStats = () => authFetch(`${API_URL}/insumos/stats`);
+export const createInsumo = (insumo) => authFetch(`${API_URL}/insumos`, {
+  method: 'POST',
+  body: JSON.stringify(insumo),
+});
+export const updateInsumo = (id, insumo) => authFetch(`${API_URL}/insumos/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(insumo),
+});
+export const ajustarStockInsumo = (id, data) => authFetch(`${API_URL}/insumos/${id}/ajustar`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+export const deleteInsumo = (id) => authFetch(`${API_URL}/insumos/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// COMPATIBILIDAD
+// ==========================================
+export const getCompatibilidades = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/compatibilidad${query ? '?' + query : ''}`);
+};
+export const buscarCompatibles = (productoId) => authFetch(`${API_URL}/compatibilidad/buscar/${productoId}`);
+export const createCompatibilidad = (data) => authFetch(`${API_URL}/compatibilidad`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+export const deleteCompatibilidad = (id) => authFetch(`${API_URL}/compatibilidad/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// AUDITORÍA Y REPORTES
+// ==========================================
+export const getLogs = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/auditoria/logs${query ? '?' + query : ''}`);
+};
+export const getAuditoriaLogs = getLogs; // Alias para compatibilidad
+export const getLogStats = () => authFetch(`${API_URL}/auditoria/stats`);
+export const getReporteGanancias = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/reportes/ganancias${query ? '?' + query : ''}`);
+};
+
+// ==========================================
+// SEGMENTACIÓN Y PROMOCIONES
+// ==========================================
+export const getSegmentaciones = () => authFetch(`${API_URL}/segmentaciones`);
+export const createSegmentacion = (segmentacion) => authFetch(`${API_URL}/segmentaciones`, {
+  method: 'POST',
+  body: JSON.stringify(segmentacion),
+});
+
+export const getPromociones = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return authFetch(`${API_URL}/promociones${query ? '?' + query : ''}`);
+};
+export const createPromocion = (promocion) => authFetch(`${API_URL}/promociones`, {
+  method: 'POST',
+  body: JSON.stringify(promocion),
+});
+export const updatePromocion = (id, promocion) => authFetch(`${API_URL}/promociones/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(promocion),
+});
+export const deletePromocion = (id) => authFetch(`${API_URL}/promociones/${id}`, {
+  method: 'DELETE',
+});
+
+// ==========================================
+// USUARIOS Y ROLES
+// ==========================================
+export const getUsers = () => authFetch(`${API_URL}/users`);
+export const getUser = (id) => authFetch(`${API_URL}/users/${id}`);
+export const createUser = (user) => authFetch(`${API_URL}/users`, {
+  method: 'POST',
+  body: JSON.stringify(user),
+});
+export const updateUser = (id, user) => authFetch(`${API_URL}/users/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(user),
+});
+export const deleteUser = (id) => authFetch(`${API_URL}/users/${id}`, {
+  method: 'DELETE',
+});
+
+export const getRoles = () => authFetch(`${API_URL}/roles`);
+export const getRole = (id) => authFetch(`${API_URL}/roles/${id}`);
+export const createRole = (role) => authFetch(`${API_URL}/roles`, {
+  method: 'POST',
+  body: JSON.stringify(role),
+});
+export const updateRole = (id, role) => authFetch(`${API_URL}/roles/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(role),
+});
+export const deleteRole = (id) => authFetch(`${API_URL}/roles/${id}`, {
+  method: 'DELETE',
+});
+
+export const getPermissions = () => authFetch(`${API_URL}/permissions`);
+
+// ==========================================
+// UPLOAD
+// ==========================================
+export const uploadImage = async (file) => {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const response = await fetch(`${API_URL}/upload/image`, {
+    method: 'POST',
+    headers: getAuthHeader(),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Upload failed');
+  }
+
+  return response.json();
+};
+
+export const deleteImage = (imageUrl) => authFetch(`${API_URL}/upload/image`, {
+  method: 'DELETE',
+  body: JSON.stringify({ image_url: imageUrl }),
+});

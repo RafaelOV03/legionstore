@@ -1,0 +1,4 @@
+Gerente	Reportes, Auditoría, Promociones, Segmentación
+Vendedor	Cotizaciones, Stock multisede, Compatibilidad
+Técnico	Órdenes de trabajo, Insumos, Prioridades
+Administrador	RMA, Traspasos, Proveedores, Deudas, Precios
