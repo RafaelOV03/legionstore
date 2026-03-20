@@ -46,6 +46,7 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
+      - /app/node_modules  # Volumen anónimo para proteger node_modules
     depends_on:
       - backend
     networks:

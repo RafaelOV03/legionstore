@@ -150,7 +150,7 @@ $breadcrumb-divider-color: #a0aec0;
 $breadcrumb-active-color: #cbd5e0;
 
 // 2. Importar Bootstrap completo (una sola línea, forma simple y confiable)
-@import "../node_modules/bootstrap/scss/bootstrap";
+@import "./node_modules/bootstrap/scss/bootstrap";
 
 // 3. Estilos adicionales personalizados
 .btn-close {
