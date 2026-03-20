@@ -2,9 +2,10 @@ package controllers
 
 import (
 	"database/sql"
-	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,8 @@ import (
 func GetSedes(c *gin.Context) {
 	rows, err := database.DB.Query(`SELECT id, created_at, updated_at, nombre, direccion, telefono, activa FROM sedes ORDER BY nombre`)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sedes"})
+		apiErr := errors.NewDatabaseError("Fetch locations", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -31,14 +33,15 @@ func GetSedes(c *gin.Context) {
 		sedes = append(sedes, sede)
 	}
 
-	c.JSON(http.StatusOK, sedes)
+	c.JSON(200, sedes)
 }
 
 // GetSede obtiene una sede por ID
 func GetSede(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sede ID"})
+		apiErr := errors.NewBadRequest("Invalid sede ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -48,30 +51,50 @@ func GetSede(c *gin.Context) {
 		Scan(&sede.ID, &sede.CreatedAt, &sede.UpdatedAt, &sede.Nombre, &sede.Direccion, &sede.Telefono, &activa)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Sede not found"})
+		apiErr := errors.NewNotFound("Sede", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sede"})
+		apiErr := errors.NewDatabaseError("Fetch location", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	sede.Activa = activa == 1
-	c.JSON(http.StatusOK, sede)
+	c.JSON(200, sede)
 }
 
 // CreateSede crea una nueva sede
 func CreateSede(c *gin.Context) {
+	var req struct {
+		Nombre    string `json:"nombre" validate:"required,min=3"`
+		Direccion string `json:"direccion" validate:"required,min=5"`
+		Telefono  string `json:"telefono" validate:"required"`
+	}
+
 	var sede models.Sede
 	if err := c.ShouldBindJSON(&sede); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	req.Nombre = sede.Nombre
+	req.Direccion = sede.Direccion
+	req.Telefono = sede.Telefono
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
 	result, err := database.DB.Exec(`INSERT INTO sedes (nombre, direccion, telefono, activa) VALUES (?, ?, ?, ?)`,
 		sede.Nombre, sede.Direccion, sede.Telefono, 1)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create sede"})
+		apiErr := errors.NewDatabaseError("Insert location", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -81,20 +104,30 @@ func CreateSede(c *gin.Context) {
 	// Log de auditoría
 	logAuditoria(c, "crear", "sede", sede.ID, "", sede.Nombre)
 
-	c.JSON(http.StatusCreated, sede)
+	c.JSON(201, sede)
 }
 
 // UpdateSede actualiza una sede
 func UpdateSede(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sede ID"})
+		apiErr := errors.NewBadRequest("Invalid sede ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	var sede models.Sede
 	if err := c.ShouldBindJSON(&sede); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	var exists int
+	err = database.DB.QueryRow("SELECT 1 FROM sedes WHERE id = ?", id).Scan(&exists)
+	if err != nil {
+		apiErr := errors.NewNotFound("Sede", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -106,21 +139,31 @@ func UpdateSede(c *gin.Context) {
 	_, err = database.DB.Exec(`UPDATE sedes SET nombre = ?, direccion = ?, telefono = ?, activa = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		sede.Nombre, sede.Direccion, sede.Telefono, activa, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update sede"})
+		apiErr := errors.NewDatabaseError("Update location", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	sede.ID = id
 	logAuditoria(c, "editar", "sede", id, "", sede.Nombre)
 
-	c.JSON(http.StatusOK, sede)
+	c.JSON(200, sede)
 }
 
 // DeleteSede elimina una sede
 func DeleteSede(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sede ID"})
+		apiErr := errors.NewBadRequest("Invalid sede ID")
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	var exists int
+	err = database.DB.QueryRow("SELECT 1 FROM sedes WHERE id = ?", id).Scan(&exists)
+	if err != nil {
+		apiErr := errors.NewNotFound("Sede", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -128,18 +171,20 @@ func DeleteSede(c *gin.Context) {
 	var count int
 	database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE sede_id = ?", id).Scan(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No se puede eliminar la sede, tiene usuarios asociados"})
+		apiErr := errors.NewConflict("Location has associated users")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	_, err = database.DB.Exec("DELETE FROM sedes WHERE id = ?", id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete sede"})
+		apiErr := errors.NewDatabaseError("Delete location", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "eliminar", "sede", id, "", "")
-	c.JSON(http.StatusOK, gin.H{"message": "Sede deleted successfully"})
+	c.JSON(200, gin.H{"message": "Sede deleted successfully"})
 }
 
 // GetStockMultisede obtiene el stock de todos los productos en todas las sedes

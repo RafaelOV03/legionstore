@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"strconv"
 	"time"
 
@@ -43,7 +44,8 @@ func GetCotizaciones(c *gin.Context) {
 
 	rows, err := database.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cotizaciones"})
+		apiErr := errors.NewDatabaseError("Fetch cotizaciones", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -67,14 +69,15 @@ func GetCotizaciones(c *gin.Context) {
 		cotizaciones = append(cotizaciones, cot)
 	}
 
-	c.JSON(http.StatusOK, cotizaciones)
+	c.JSON(200, cotizaciones)
 }
 
 // GetCotizacion obtiene una cotización por ID con sus items
 func GetCotizacion(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cotización ID"})
+		apiErr := errors.NewBadRequest("Invalid cotization id format")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -89,11 +92,13 @@ func GetCotizacion(c *gin.Context) {
 			&cot.Descuento, &cot.Notas, &cot.UsuarioID, &cot.SedeID)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
+		apiErr := errors.NewNotFound("Cotization", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cotización"})
+		apiErr := errors.NewDatabaseError("Fetch cotization", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -126,39 +131,49 @@ func GetCotizacion(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"cotizacion": cot, "items": items})
+	c.JSON(200, gin.H{"cotizacion": cot, "items": items})
 }
 
 // CreateCotizacion crea una nueva cotización
 func CreateCotizacion(c *gin.Context) {
 	var req struct {
-		ClienteNombre   string  `json:"cliente_nombre" binding:"required"`
+		ClienteNombre   string  `json:"cliente_nombre" validate:"required,min=3"`
 		ClienteTelefono string  `json:"cliente_telefono"`
-		ClienteEmail    string  `json:"cliente_email"`
+		ClienteEmail    string  `json:"cliente_email" validate:"email"`
 		ValidezDias     int     `json:"validez_dias"`
-		Descuento       float64 `json:"descuento"`
+		Descuento       float64 `json:"descuento" validate:"gte=0"`
 		Notas           string  `json:"notas"`
-		SedeID          int64   `json:"sede_id" binding:"required"`
+		SedeID          int64   `json:"sede_id" validate:"required,gt=0"`
 		Items           []struct {
 			ProductoID     int64   `json:"producto_id"`
 			Cantidad       int     `json:"cantidad"`
 			PrecioUnitario float64 `json:"precio_unitario"`
-		} `json:"items" binding:"required"`
+		} `json:"items" validate:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
 	if len(req.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Debe incluir al menos un item"})
+		apiErr := errors.NewBadRequest("Must include at least one item")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	userID, exists := c.Get("userid")
 	if !exists || userID == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario no autenticado"})
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -180,7 +195,8 @@ func CreateCotizacion(c *gin.Context) {
 
 	tx, err := database.DB.Begin()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+		apiErr := errors.NewDatabaseError("Start transaction", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -193,7 +209,8 @@ func CreateCotizacion(c *gin.Context) {
 
 	if err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create cotización: " + err.Error()})
+		apiErr := errors.NewDatabaseError("Insert cotization", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -208,85 +225,104 @@ func CreateCotizacion(c *gin.Context) {
 			cotID, item.ProductoID, item.Cantidad, item.PrecioUnitario, subtotal)
 		if err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add items: " + err.Error()})
+			apiErr := errors.NewDatabaseError("Insert cotization items", err)
+			c.JSON(apiErr.Code, apiErr)
 			return
 		}
 	}
 
 	if err = tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		apiErr := errors.NewDatabaseError("Commit transaction", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "crear", "cotizacion", cotID, "", numeroCotizacion)
 
-	c.JSON(http.StatusCreated, gin.H{"id": cotID, "numero_cotizacion": numeroCotizacion, "total": total})
+	c.JSON(201, gin.H{"id": cotID, "numero_cotizacion": numeroCotizacion, "total": total})
 }
 
 // UpdateCotizacionEstado actualiza el estado de una cotización
 func UpdateCotizacionEstado(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cotización ID"})
+		apiErr := errors.NewBadRequest("Invalid cotización ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	var req struct {
-		Estado string `json:"estado" binding:"required"`
+		Estado string `json:"estado" validate:"required,oneof=pendiente aprobada rechazada vencida convertida"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	// Validar estado
-	estados := []string{"pendiente", "aprobada", "rechazada", "vencida", "convertida"}
-	valid := false
-	for _, e := range estados {
-		if e == req.Estado {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Estado inválido"})
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
 	var estadoAnterior string
-	database.DB.QueryRow("SELECT estado FROM cotizaciones WHERE id = ?", id).Scan(&estadoAnterior)
+	err = database.DB.QueryRow("SELECT estado FROM cotizaciones WHERE id = ?", id).Scan(&estadoAnterior)
+	if err != nil {
+		apiErr := errors.NewNotFound("Cotización", "id", id)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	_, err = database.DB.Exec("UPDATE cotizaciones SET estado = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", req.Estado, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update cotización"})
+		apiErr := errors.NewDatabaseError("Update cotization status", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "editar", "cotizacion", id, estadoAnterior, req.Estado)
 
-	c.JSON(http.StatusOK, gin.H{"message": "Cotización updated successfully"})
+	c.JSON(200, gin.H{"message": "Cotización updated successfully"})
 }
 
 // DeleteCotizacion elimina una cotización
 func DeleteCotizacion(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cotización ID"})
+		apiErr := errors.NewBadRequest("Invalid cotización ID")
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Verificar que existe
+	var exists int
+	err = database.DB.QueryRow("SELECT 1 FROM cotizaciones WHERE id = ?", id).Scan(&exists)
+	if err != nil {
+		apiErr := errors.NewNotFound("Cotización", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Eliminar items primero
-	database.DB.Exec("DELETE FROM cotizacion_items WHERE cotizacion_id = ?", id)
+	_, err = database.DB.Exec("DELETE FROM cotizacion_items WHERE cotizacion_id = ?", id)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Delete cotization items", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	_, err = database.DB.Exec("DELETE FROM cotizaciones WHERE id = ?", id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete cotización"})
+		apiErr := errors.NewDatabaseError("Delete cotization", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "eliminar", "cotizacion", id, "", "")
-	c.JSON(http.StatusOK, gin.H{"message": "Cotización deleted successfully"})
+	c.JSON(200, gin.H{"message": "Cotización deleted successfully"})
 }
 
 // ConvertirCotizacionAVenta convierte una cotización aprobada a venta

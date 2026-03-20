@@ -3,9 +3,10 @@ package controllers
 import (
 	"database/sql"
 	"fmt"
-	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"strconv"
 	"time"
 
@@ -45,7 +46,8 @@ func GetRMAs(c *gin.Context) {
 
 	rows, err := database.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch RMAs"})
+		apiErr := errors.NewDatabaseError("Fetch RMAs", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -79,14 +81,15 @@ func GetRMAs(c *gin.Context) {
 		rmas = append(rmas, rma)
 	}
 
-	c.JSON(http.StatusOK, rmas)
+	c.JSON(200, rmas)
 }
 
 // GetRMA obtiene una RMA por ID
 func GetRMA(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RMA ID"})
+		apiErr := errors.NewBadRequest("Invalid RMA ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -103,11 +106,13 @@ func GetRMA(c *gin.Context) {
 			&rma.UsuarioID, &rma.SedeID, &rma.Notas)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "RMA not found"})
+		apiErr := errors.NewNotFound("RMA", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch RMA"})
+		apiErr := errors.NewDatabaseError("Fetch RMA", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -144,30 +149,43 @@ func GetRMA(c *gin.Context) {
 		historial = append(historial, h)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"rma": rma, "historial": historial})
+	c.JSON(200, gin.H{"rma": rma, "historial": historial})
 }
 
 // CreateRMA crea una nueva RMA
 func CreateRMA(c *gin.Context) {
 	var req struct {
-		ProductoID       int64  `json:"producto_id" binding:"required"`
-		ClienteNombre    string `json:"cliente_nombre" binding:"required"`
+		ProductoID       int64  `json:"producto_id" validate:"required,gt=0"`
+		ClienteNombre    string `json:"cliente_nombre" validate:"required,min=3"`
 		ClienteTelefono  string `json:"cliente_telefono"`
 		ClienteEmail     string `json:"cliente_email"`
 		NumSerie         string `json:"num_serie"`
 		FechaCompra      string `json:"fecha_compra"`
-		MotivoDevolucion string `json:"motivo_devolucion" binding:"required"`
-		SedeID           int64  `json:"sede_id" binding:"required"`
+		MotivoDevolucion string `json:"motivo_devolucion" validate:"required"`
+		SedeID           int64  `json:"sede_id" validate:"required,gt=0"`
 		Notas            string `json:"notas"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
 	// Obtener usuario del contexto
-	userID, _ := c.Get("userid")
+	userID, exists := c.Get("userid")
+	if !exists || userID == nil {
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	// Generar número de RMA
 	var count int
@@ -189,7 +207,8 @@ func CreateRMA(c *gin.Context) {
 		req.NumSerie, fechaCompra, req.MotivoDevolucion, userID, req.SedeID, req.Notas)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create RMA: " + err.Error()})
+		apiErr := errors.NewDatabaseError("Insert RMA", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -201,35 +220,51 @@ func CreateRMA(c *gin.Context) {
 
 	logAuditoria(c, "crear", "rma", rmaID, "", numeroRMA)
 
-	c.JSON(http.StatusCreated, gin.H{"id": rmaID, "numero_rma": numeroRMA})
+	c.JSON(201, gin.H{"id": rmaID, "numero_rma": numeroRMA})
 }
 
 // UpdateRMA actualiza una RMA
 func UpdateRMA(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RMA ID"})
+		apiErr := errors.NewBadRequest("Invalid RMA ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	var req struct {
 		Diagnostico string `json:"diagnostico"`
-		Estado      string `json:"estado"`
+		Estado      string `json:"estado" validate:"oneof=recibido en_revision resuelto rechazado pendiente"`
 		Solucion    string `json:"solucion"`
 		Notas       string `json:"notas"`
 		Comentario  string `json:"comentario"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
+	}
+
+	// Validar estructura
+	if req.Estado != "" {
+		validationErrors := validation.ValidateStruct(req)
+		if len(validationErrors) > 0 {
+			c.JSON(422, validationErrors.ToAPIError())
+			return
+		}
 	}
 
 	userID, _ := c.Get("userid")
 
 	// Obtener estado anterior
 	var estadoAnterior string
-	database.DB.QueryRow("SELECT estado FROM rmas WHERE id = ?", id).Scan(&estadoAnterior)
+	err = database.DB.QueryRow("SELECT estado FROM rmas WHERE id = ?", id).Scan(&estadoAnterior)
+	if err != nil {
+		apiErr := errors.NewNotFound("RMA", "id", id)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	// Si el estado cambia a 'resuelto', registrar fecha de resolución
 	var fechaResolucion interface{}
@@ -246,40 +281,57 @@ func UpdateRMA(c *gin.Context) {
 		req.Diagnostico, req.Estado, req.Solucion, req.Notas, fechaResolucion, id)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update RMA"})
+		apiErr := errors.NewDatabaseError("Update RMA", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Registrar cambio de estado en historial
-	if req.Estado != estadoAnterior {
+	if req.Estado != estadoAnterior && req.Estado != "" {
 		database.DB.Exec(`INSERT INTO historial_rmas (rma_id, estado_anterior, estado_nuevo, comentario, usuario_id)
 			VALUES (?, ?, ?, ?, ?)`, id, estadoAnterior, req.Estado, req.Comentario, userID)
 	}
 
 	logAuditoria(c, "editar", "rma", id, estadoAnterior, req.Estado)
 
-	c.JSON(http.StatusOK, gin.H{"message": "RMA updated successfully"})
+	c.JSON(200, gin.H{"message": "RMA updated successfully"})
 }
 
 // DeleteRMA elimina una RMA
 func DeleteRMA(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RMA ID"})
+		apiErr := errors.NewBadRequest("Invalid RMA ID")
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Verificar que existe
+	var exists int
+	err = database.DB.QueryRow("SELECT 1 FROM rmas WHERE id = ?", id).Scan(&exists)
+	if err != nil {
+		apiErr := errors.NewNotFound("RMA", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Eliminar historial primero
-	database.DB.Exec("DELETE FROM historial_rmas WHERE rma_id = ?", id)
+	_, err = database.DB.Exec("DELETE FROM historial_rmas WHERE rma_id = ?", id)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Delete RMA history", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	_, err = database.DB.Exec("DELETE FROM rmas WHERE id = ?", id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete RMA"})
+		apiErr := errors.NewDatabaseError("Delete RMA", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "eliminar", "rma", id, "", "")
-	c.JSON(http.StatusOK, gin.H{"message": "RMA deleted successfully"})
+	c.JSON(200, gin.H{"message": "RMA deleted successfully"})
 }
 
 // GetRMAStats obtiene estadísticas de RMAs
@@ -299,5 +351,5 @@ func GetRMAStats(c *gin.Context) {
 	database.DB.QueryRow("SELECT COUNT(*) FROM rmas WHERE estado = 'resuelto'").Scan(&stats.Resueltos)
 	database.DB.QueryRow("SELECT COUNT(*) FROM rmas WHERE estado = 'rechazado'").Scan(&stats.Rechazados)
 
-	c.JSON(http.StatusOK, stats)
+	c.JSON(200, stats)
 }

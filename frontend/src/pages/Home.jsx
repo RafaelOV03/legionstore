@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Alert, Carousel, Card, Button, Badge } from 'react-bootstrap';
 import ProductCard from '../components/ProductCard';
-import { getProducts, addToCart } from '../services/api';
+import { getProducts, addToCart } from '../services/resourceApi';
 import { useCart } from '../hooks/useCart';
 import { ChevronRight } from 'react-bootstrap-icons';
 

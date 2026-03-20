@@ -6,7 +6,7 @@ import {
   Receipt, GraphUp, People, ExclamationTriangle
 } from 'react-bootstrap-icons';
 import { useAuth } from '../context/AuthContext';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Dashboard() {
   const { user, hasPermission } = useAuth();

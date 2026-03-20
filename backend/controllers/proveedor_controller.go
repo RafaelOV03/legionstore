@@ -2,9 +2,10 @@ package controllers
 
 import (
 	"database/sql"
-	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"strconv"
 	"time"
 
@@ -18,7 +19,8 @@ func GetProveedores(c *gin.Context) {
 		FROM proveedores ORDER BY nombre
 	`)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch proveedores", "details": err.Error()})
+		apiErr := errors.NewDatabaseError("Fetch providers", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -36,14 +38,15 @@ func GetProveedores(c *gin.Context) {
 		proveedores = append(proveedores, p)
 	}
 
-	c.JSON(http.StatusOK, proveedores)
+	c.JSON(200, proveedores)
 }
 
 // GetProveedor obtiene un proveedor por ID con sus deudas
 func GetProveedor(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proveedor ID"})
+		apiErr := errors.NewBadRequest("Invalid proveedor ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -56,11 +59,13 @@ func GetProveedor(c *gin.Context) {
 			&p.Telefono, &p.Email, &p.Contacto, &activo)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Proveedor not found"})
+		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch proveedor"})
+		apiErr := errors.NewDatabaseError("Fetch provider", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	p.Activo = activo == 1
@@ -105,13 +110,13 @@ func GetProveedor(c *gin.Context) {
 		totalDeuda += (d.MontoTotal - d.MontoPagado)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"proveedor": p, "deudas": deudas, "total_deuda": totalDeuda})
+	c.JSON(200, gin.H{"proveedor": p, "deudas": deudas, "total_deuda": totalDeuda})
 }
 
 // CreateProveedor crea un nuevo proveedor
 func CreateProveedor(c *gin.Context) {
 	var req struct {
-		Nombre    string `json:"nombre" binding:"required"`
+		Nombre    string `json:"nombre" validate:"required,min=3"`
 		RucNit    string `json:"ruc_nit"`
 		Direccion string `json:"direccion"`
 		Telefono  string `json:"telefono"`
@@ -120,7 +125,15 @@ func CreateProveedor(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
@@ -130,21 +143,23 @@ func CreateProveedor(c *gin.Context) {
 		req.Nombre, req.RucNit, req.Direccion, req.Telefono, req.Email, req.Contacto)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create proveedor"})
+		apiErr := errors.NewDatabaseError("Insert provider", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	proveedorID, _ := result.LastInsertId()
 	logAuditoria(c, "crear", "proveedor", proveedorID, "", req.Nombre)
 
-	c.JSON(http.StatusCreated, gin.H{"id": proveedorID})
+	c.JSON(201, gin.H{"id": proveedorID})
 }
 
 // UpdateProveedor actualiza un proveedor
 func UpdateProveedor(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proveedor ID"})
+		apiErr := errors.NewBadRequest("Invalid proveedor ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -159,7 +174,16 @@ func UpdateProveedor(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	var proveedor models.Proveedor
+	err = database.DB.QueryRow("SELECT id FROM proveedores WHERE id = ?", id).Scan(&proveedor.ID)
+	if err != nil {
+		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -175,19 +199,30 @@ func UpdateProveedor(c *gin.Context) {
 		req.Nombre, req.RucNit, req.Direccion, req.Telefono, req.Email, req.Contacto, activo, id)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update proveedor"})
+		apiErr := errors.NewDatabaseError("Update provider", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "editar", "proveedor", id, "", req.Nombre)
-	c.JSON(http.StatusOK, gin.H{"message": "Proveedor updated successfully"})
+	c.JSON(200, gin.H{"message": "Proveedor updated successfully"})
 }
 
 // DeleteProveedor elimina un proveedor
 func DeleteProveedor(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid proveedor ID"})
+		apiErr := errors.NewBadRequest("Invalid proveedor ID")
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Verificar si existe
+	var exists int
+	err = database.DB.QueryRow("SELECT 1 FROM proveedores WHERE id = ?", id).Scan(&exists)
+	if err != nil {
+		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -195,16 +230,34 @@ func DeleteProveedor(c *gin.Context) {
 	var deudasPendientes int
 	database.DB.QueryRow("SELECT COUNT(*) FROM deudas_proveedores WHERE proveedor_id = ? AND estado != 'pagada'", id).Scan(&deudasPendientes)
 	if deudasPendientes > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No se puede eliminar un proveedor con deudas pendientes"})
+		apiErr := errors.NewConflict("Provider has pending debts")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	database.DB.Exec("DELETE FROM pagos_proveedores WHERE deuda_id IN (SELECT id FROM deudas_proveedores WHERE proveedor_id = ?)", id)
-	database.DB.Exec("DELETE FROM deudas_proveedores WHERE proveedor_id = ?", id)
-	database.DB.Exec("DELETE FROM proveedores WHERE id = ?", id)
+	_, err = database.DB.Exec("DELETE FROM pagos_proveedores WHERE deuda_id IN (SELECT id FROM deudas_proveedores WHERE proveedor_id = ?)", id)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Delete provider payments", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	_, err = database.DB.Exec("DELETE FROM deudas_proveedores WHERE proveedor_id = ?", id)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Delete provider debts", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	_, err = database.DB.Exec("DELETE FROM proveedores WHERE id = ?", id)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Delete provider", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	logAuditoria(c, "eliminar", "proveedor", id, "", "")
-	c.JSON(http.StatusOK, gin.H{"message": "Proveedor deleted successfully"})
+	c.JSON(200, gin.H{"message": "Proveedor deleted successfully"})
 }
 
 // GetDeudas obtiene todas las deudas pendientes de proveedores

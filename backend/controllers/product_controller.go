@@ -1,103 +1,84 @@
 package controllers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/repository"
+	"smartech/backend/validation"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
+var productRepo *repository.ProductRepository
+
+// InitProductRepository inicializa el repositorio de productos
+func InitProductRepository() {
+	productRepo = repository.NewProductRepository(database.DB)
+}
+
 // GetProducts devuelve todos los productos
 func GetProducts(c *gin.Context) {
-	rows, err := database.DB.Query(`
-		SELECT p.id, p.created_at, p.updated_at, p.codigo, p.name, p.description, 
-		       p.precio_compra, p.precio_venta, p.category, p.brand, p.image_url, p.images, p.activo,
-		       COALESCE(SUM(ss.cantidad), 0) as stock_total
-		FROM products p
-		LEFT JOIN stock_sedes ss ON p.id = ss.producto_id
-		WHERE p.activo = 1
-		GROUP BY p.id
-		ORDER BY p.created_at DESC
-	`)
+	products, err := productRepo.GetAll()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve products", "details": err.Error()})
+		apiErr := errors.NewDatabaseError("Fetch products", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-	defer rows.Close()
 
-	type ProductWithStock struct {
-		models.Product
-		StockTotal int `json:"stock_total"`
-	}
-
-	var products []ProductWithStock
-	for rows.Next() {
-		var product ProductWithStock
-		var activo int
-		err := rows.Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-			&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo,
-			&product.StockTotal)
-		if err != nil {
-			continue
-		}
-		product.Activo = activo == 1
-		products = append(products, product)
-	}
-
-	c.JSON(http.StatusOK, products)
+	c.JSON(200, products)
 }
 
 // GetProduct devuelve un producto por su id
 func GetProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product id"})
+		apiErr := errors.NewBadRequest("Invalid product id format")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	var product models.Product
-	var activo int
-	err = database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo
-		FROM products
-		WHERE id = ?
-	`, id).Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-		&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo)
-
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
-		return
-	}
+	product, err := productRepo.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve product"})
+		apiErr := errors.NewDatabaseError("Fetch product", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-	product.Activo = activo == 1
+	if product == nil {
+		apiErr := errors.NewNotFound("Product", id)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
-	c.JSON(http.StatusOK, product)
+	c.JSON(200, product)
 }
 
 // CreateProduct crea un nuevo producto
 func CreateProduct(c *gin.Context) {
 	var reqData struct {
-		Codigo       string   `json:"codigo" binding:"required"`
-		Name         string   `json:"name" binding:"required"`
+		Codigo       string   `json:"codigo" validate:"required,min=1"`
+		Name         string   `json:"name" validate:"required,min=3"`
 		Description  string   `json:"description"`
-		PrecioCompra float64  `json:"precio_compra"`
-		PrecioVenta  float64  `json:"precio_venta" binding:"required"`
-		Category     string   `json:"category" binding:"required"`
+		PrecioCompra float64  `json:"precio_compra" validate:"gte=0"`
+		PrecioVenta  float64  `json:"precio_venta" validate:"required,gt=0"`
+		Category     string   `json:"category" validate:"required,min=1"`
 		Brand        string   `json:"brand"`
 		ImageURL     string   `json:"image_url"`
 		Images       []string `json:"images"`
 	}
 
 	if err := c.ShouldBindJSON(&reqData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(reqData)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
@@ -108,26 +89,7 @@ func CreateProduct(c *gin.Context) {
 		imagesJSON = string(imagesBytes)
 	}
 
-	result, err := database.DB.Exec(`
-		INSERT INTO products (codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, reqData.Codigo, reqData.Name, reqData.Description, reqData.PrecioCompra, reqData.PrecioVenta, reqData.Category,
-		reqData.Brand, reqData.ImageURL, imagesJSON)
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create product", "details": err.Error()})
-		return
-	}
-
-	productID, err := result.LastInsertId()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get product id"})
-		return
-	}
-
-	// Devolver el producto creado
-	product := models.Product{
-		ID:           productID,
+	product := &models.Product{
 		Codigo:       reqData.Codigo,
 		Name:         reqData.Name,
 		Description:  reqData.Description,
@@ -140,143 +102,114 @@ func CreateProduct(c *gin.Context) {
 		Activo:       true,
 	}
 
-	c.JSON(http.StatusCreated, product)
+	err := productRepo.Create(product)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Create product", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	c.JSON(201, product)
 }
 
 // UpdateProduct actualiza un producto existente
 func UpdateProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product id"})
+		apiErr := errors.NewBadRequest("Invalid product id format")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Verificar que el producto existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM products WHERE id = ?", id).Scan(&count)
-	if err != nil || count == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+	existing, err := productRepo.GetByID(id)
+	if err != nil || existing == nil {
+		apiErr := errors.NewNotFound("Product", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	var updateData struct {
-		Codigo       *string          `json:"codigo"`
-		Name         *string          `json:"name"`
-		Description  *string          `json:"description"`
-		PrecioCompra *float64         `json:"precio_compra"`
-		PrecioVenta  *float64         `json:"precio_venta"`
-		Category     *string          `json:"category"`
-		Brand        *string          `json:"brand"`
-		ImageURL     *string          `json:"image_url"`
-		Images       *json.RawMessage `json:"images"`
-		Activo       *bool            `json:"activo"`
+		Codigo       string  `json:"codigo"`
+		Name         string  `json:"name"`
+		Description  string  `json:"description"`
+		PrecioCompra float64 `json:"precio_compra"`
+		PrecioVenta  float64 `json:"precio_venta"`
+		Category     string  `json:"category"`
+		Brand        string  `json:"brand"`
+		ImageURL     string  `json:"image_url"`
+		Images       string  `json:"images"`
 	}
 
 	if err := c.ShouldBindJSON(&updateData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	// Actualizar solo los campos proporcionados
-	updates := []string{}
-	args := []interface{}{}
-
-	if updateData.Codigo != nil {
-		updates = append(updates, "codigo = ?")
-		args = append(args, *updateData.Codigo)
+	// Usar valores existentes si no se proporcionan
+	if updateData.Codigo == "" {
+		updateData.Codigo = existing.Codigo
 	}
-	if updateData.Name != nil {
-		updates = append(updates, "name = ?")
-		args = append(args, *updateData.Name)
+	if updateData.Name == "" {
+		updateData.Name = existing.Name
 	}
-	if updateData.Description != nil {
-		updates = append(updates, "description = ?")
-		args = append(args, *updateData.Description)
+	if updateData.PrecioVenta == 0 {
+		updateData.PrecioVenta = existing.PrecioVenta
 	}
-	if updateData.PrecioCompra != nil {
-		updates = append(updates, "precio_compra = ?")
-		args = append(args, *updateData.PrecioCompra)
-	}
-	if updateData.PrecioVenta != nil {
-		updates = append(updates, "precio_venta = ?")
-		args = append(args, *updateData.PrecioVenta)
-	}
-	if updateData.Category != nil {
-		updates = append(updates, "category = ?")
-		args = append(args, *updateData.Category)
-	}
-	if updateData.Brand != nil {
-		updates = append(updates, "brand = ?")
-		args = append(args, *updateData.Brand)
-	}
-	if updateData.ImageURL != nil {
-		updates = append(updates, "image_url = ?")
-		args = append(args, *updateData.ImageURL)
-	}
-	if updateData.Images != nil {
-		imagesStr := string(*updateData.Images)
-		updates = append(updates, "images = ?")
-		args = append(args, imagesStr)
-	}
-	if updateData.Activo != nil {
-		activo := 0
-		if *updateData.Activo {
-			activo = 1
-		}
-		updates = append(updates, "activo = ?")
-		args = append(args, activo)
+	if updateData.Category == "" {
+		updateData.Category = existing.Category
 	}
 
-	if len(updates) > 0 {
-		updates = append(updates, "updated_at = CURRENT_TIMESTAMP")
-		args = append(args, id)
-
-		query := "UPDATE products SET " + strings.Join(updates, ", ") + " WHERE id = ?"
-		_, err := database.DB.Exec(query, args...)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update product"})
-			return
-		}
+	product := &models.Product{
+		Codigo:       updateData.Codigo,
+		Name:         updateData.Name,
+		Description:  updateData.Description,
+		PrecioCompra: updateData.PrecioCompra,
+		PrecioVenta:  updateData.PrecioVenta,
+		Category:     updateData.Category,
+		Brand:        updateData.Brand,
+		ImageURL:     updateData.ImageURL,
+		Images:       updateData.Images,
 	}
 
-	// Recargar el producto para obtener los datos actualizados
-	var product models.Product
-	var activo int
-	database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo
-		FROM products
-		WHERE id = ?
-	`, id).Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-		&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo)
-	product.Activo = activo == 1
+	err = productRepo.Update(id, product)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Update product", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
-	c.JSON(http.StatusOK, product)
+	// Recargar para devolver datos actualizado
+	updated, _ := productRepo.GetByID(id)
+	c.JSON(200, updated)
 }
 
-// DeleteProduct elimina un producto (soft delete - desactiva)
+// DeleteProduct elimina un producto (soft delete)
 func DeleteProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product id"})
+		apiErr := errors.NewBadRequest("Invalid product id format")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Verificar que el producto existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM products WHERE id = ?", id).Scan(&count)
-	if err != nil || count == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+	existing, err := productRepo.GetByID(id)
+	if err != nil || existing == nil {
+		apiErr := errors.NewNotFound("Product", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	// Soft delete - solo desactivar
-	_, err = database.DB.Exec("UPDATE products SET activo = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+	err = productRepo.Delete(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete product"})
+		apiErr := errors.NewDatabaseError("Delete product", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Product deleted successfully"})
+	c.JSON(200, gin.H{"message": "Product deleted successfully"})
 }
 
 // GetRandomProducts devuelve productos aleatorios
@@ -288,63 +221,31 @@ func GetRandomProducts(c *gin.Context) {
 		}
 	}
 
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo
-		FROM products
-		WHERE activo = 1
-		ORDER BY RANDOM()
-		LIMIT ?
-	`, limit)
+	products, err := productRepo.GetRandomProducts(limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve random products"})
+		apiErr := errors.NewDatabaseError("Fetch random products", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-	defer rows.Close()
 
-	var products []models.Product
-	for rows.Next() {
-		var product models.Product
-		var activo int
-		err := rows.Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-			&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo)
-		if err != nil {
-			continue
-		}
-		product.Activo = activo == 1
-		products = append(products, product)
-	}
-
-	c.JSON(http.StatusOK, products)
+	c.JSON(200, products)
 }
 
 // GetProductsByCategory devuelve productos de una categoría específica
 func GetProductsByCategory(c *gin.Context) {
 	category := c.Param("category")
-
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo
-		FROM products
-		WHERE category = ? AND activo = 1
-		ORDER BY created_at DESC
-	`, category)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve products by category"})
+	if category == "" {
+		apiErr := errors.NewBadRequest("Category parameter is required")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-	defer rows.Close()
 
-	var products []models.Product
-	for rows.Next() {
-		var product models.Product
-		var activo int
-		err := rows.Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-			&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo)
-		if err != nil {
-			continue
-		}
-		product.Activo = activo == 1
-		products = append(products, product)
+	products, err := productRepo.GetByCategory(category)
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Fetch products by category", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
 	}
 
-	c.JSON(http.StatusOK, products)
+	c.JSON(200, products)
 }

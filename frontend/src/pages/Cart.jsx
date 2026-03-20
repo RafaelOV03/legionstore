@@ -1,7 +1,7 @@
 import { Container, Row, Col, ListGroup, Button, Alert, Card, Spinner } from 'react-bootstrap';
 import { Trash, Plus, Dash } from 'react-bootstrap-icons';
 import { useCart } from '../hooks/useCart';
-import { updateCartItem, removeFromCart, clearCart, getPayPalConfig, createOrder, captureOrder } from '../services/api';
+import { updateCartItem, removeFromCart, clearCart, getPayPalConfig, createOrder, captureOrder } from '../services/resourceApi';
 import { useState, useEffect } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { useNavigate } from 'react-router-dom';

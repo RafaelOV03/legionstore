@@ -1,5 +1,4 @@
-// Usar URL relativa para aprovechar el proxy de Vite
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 // Obtener el token de localStorage
 const getAuthHeader = () => {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Table, Button, Modal, Form, Alert, Badge, Card, Row, Col, InputGroup, Tabs, Tab, Nav, Spinner } from 'react-bootstrap';
 import { PencilSquare, Trash, PlusCircle, Search, ExclamationTriangle, BoxSeam, CurrencyDollar, Diagram3, Receipt, Eye, XCircle, Upload, BellFill } from 'react-bootstrap-icons';
-import { getProducts, createProduct, updateProduct, deleteProduct, getOrders, getAllOrders, uploadImage, deleteImage, finalizeOrder } from '../services/api';
+import { getProducts, createProduct, updateProduct, deleteProduct, getOrders, getAllOrders, uploadImage, deleteImage, finalizeOrder } from '../services/resourceApi';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 

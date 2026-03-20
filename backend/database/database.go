@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -15,8 +16,14 @@ func InitDatabase() {
 	var err error
 	log.Println("Connecting to database...")
 
+	// Obtener DB_PATH desde ENV
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./legionstore.db" // Valor por defecto
+	}
+
 	// Configurar SQLite para modo WAL para mejor concurrencia
-	DB, err = sql.Open("sqlite3", "./inventario.db?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000")
+	DB, err = sql.Open("sqlite3", fmt.Sprintf("%s?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000", dbPath))
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}

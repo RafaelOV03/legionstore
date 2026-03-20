@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Modal, Form, Badge, Spinner, Alert, InputGroup, ProgressBar } from 'react-bootstrap';
 import { Plus, CashStack, Check, Clock, ExclamationTriangle, Receipt } from 'react-bootstrap-icons';
 import { useAuth } from '../context/AuthContext';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Deudas() {
   const { hasPermission, user } = useAuth();

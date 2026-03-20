@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"net/http"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/middleware"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,20 +16,37 @@ import (
 // Register registra un nuevo usuario
 func Register(c *gin.Context) {
 	var req struct {
-		Name     string `json:"name" binding:"required"`
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=6"`
+		Name     string `json:"name" validate:"required,min=3,max=100"`
+		Email    string `json:"email" validate:"required,email"`
+		Password string `json:"password" validate:"required,min=6"`
 	}
+
+	// Bind JSON
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
 	// Verificar si el email ya existe
 	var count int
 	err := database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", req.Email).Scan(&count)
-	if err == nil && count > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+	if err != nil {
+		apiErr := errors.NewDatabaseError("Check email existence", err)
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	if count > 0 {
+		apiErr := errors.NewConflict("Email already registered")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -40,11 +59,13 @@ func Register(c *gin.Context) {
 	`, "usuario").Scan(&userRole.ID, &userRole.CreatedAt, &userRole.UpdatedAt, &userRole.Name, &userRole.Description, new(int))
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Default role not found"})
+		apiErr := errors.NewInternal("Default role not found")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch default role"})
+		apiErr := errors.NewDatabaseError("Fetch default role", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -57,7 +78,8 @@ func Register(c *gin.Context) {
 
 	// Encriptar contraseña
 	if err := user.HashPassword(req.Password); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		apiErr := errors.NewInternal("Failed to hash password")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -67,13 +89,15 @@ func Register(c *gin.Context) {
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`, user.Name, user.Email, user.Password, user.RoleID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		apiErr := errors.NewDatabaseError("Create user", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	userID, err := result.LastInsertId()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user id"})
+		apiErr := errors.NewDatabaseError("Get user ID", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	user.ID = userID
@@ -90,14 +114,15 @@ func Register(c *gin.Context) {
 	// Generar token JWT
 	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(userRole.ID), userRole.Name, permissions)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		apiErr := errors.NewInternal("Failed to generate JWT token")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Cargar user completo con role y permisos
 	user.Role = &userRole
 
-	c.JSON(http.StatusCreated, gin.H{
+	c.JSON(201, gin.H{
 		"message": "User registered successfully",
 		"user":    user,
 		"token":   token,
@@ -107,11 +132,20 @@ func Register(c *gin.Context) {
 // Login autentica un usuario
 func Login(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
+		Email    string `json:"email" validate:"required,email"`
+		Password string `json:"password" validate:"required"`
 	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(req)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
@@ -130,17 +164,20 @@ func Login(c *gin.Context) {
 	)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		apiErr := errors.NewDatabaseError("Fetch user by email", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	// Verificar contraseña
 	if err := user.CheckPassword(req.Password); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -165,11 +202,12 @@ func Login(c *gin.Context) {
 	// Generar token JWT
 	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(role.ID), role.Name, permissions)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		apiErr := errors.NewInternal("Failed to generate JWT token")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(200, gin.H{
 		"message": "Login successful",
 		"user":    user,
 		"token":   token,
@@ -180,7 +218,8 @@ func Login(c *gin.Context) {
 func GetCurrentUser(c *gin.Context) {
 	userid, exists := c.Get("userid")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -193,11 +232,13 @@ func GetCurrentUser(c *gin.Context) {
 	`, userid).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt, &user.Name, &user.Email, &user.RoleID)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		apiErr := errors.NewNotFound("User", userid)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		apiErr := errors.NewDatabaseError("Fetch current user", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Table, Badge, Spinner, Alert, InputGroup } from 'react-bootstrap';
 import { Search, Tools, Check, BoxSeam } from 'react-bootstrap-icons';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Compatibilidad() {
   const [productos, setProductos] = useState([]);

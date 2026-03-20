@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Container, Row, Col, Card, Button, Carousel, ListGroup, Alert } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { getProduct, addToCart, getRelatedProducts } from '../services/api';
+import { getProduct, addToCart, getRelatedProducts } from '../services/resourceApi';
 import { Cart, CheckCircle, ExclamationTriangle, ArrowLeft } from 'react-bootstrap-icons';
 import ProductCard from '../components/ProductCard';
 

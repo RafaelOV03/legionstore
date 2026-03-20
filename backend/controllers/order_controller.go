@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"smartech/backend/database"
+	"smartech/backend/errors"
 	"smartech/backend/models"
+	"smartech/backend/validation"
 	"strconv"
 	"strings"
 	"time"
@@ -28,19 +30,26 @@ type PayPalConfig struct {
 var paypalConfig PayPalConfig
 
 func init() {
-	// Configuración de PayPal (usar variables de entorno en producción)
+	// Configuración de PayPal (desde variables de entorno o valores por defecto para desarrollo)
 	paypalConfig = PayPalConfig{
-		Clientid: os.Getenv("PAYPAL_CLIENT_id"),
+		Clientid: os.Getenv("PAYPAL_CLIENT_ID"),
 		Secret:   os.Getenv("PAYPAL_SECRET"),
-		BaseURL:  "https://api-m.sandbox.paypal.com", // Sandbox por defecto
+		BaseURL:  os.Getenv("PAYPAL_BASE_URL"),
 	}
 
 	// Si no hay variables de entorno, usar valores por defecto para desarrollo
 	if paypalConfig.Clientid == "" {
-		paypalConfig.Clientid = "Aec0f6y57ztt6tvhADUXj1GAZqlH_vF0hGyK89cWblFEs3Gq3kunXw1iaqGeKe32CjPMuxy3PMuzLz6A" // Reemplazar con tu Client id de Sandbox
+		log.Println("Warning: PAYPAL_CLIENT_ID not configured, using development default")
+		paypalConfig.Clientid = "Aec0f6y57ztt6tvhADUXj1GAZqlH_vF0hGyK89cWblFEs3Gq3kunXw1iaqGeKe32CjPMuxy3PMuzLz6A"
 	}
 	if paypalConfig.Secret == "" {
-		paypalConfig.Secret = "EAF3VXSIZfDhEr522LM9UAyVOGn0kVvyiJBaJKPah4iRweg6MpAv2IZR8TDNhqj-9GUZuS17P066shVf" // Reemplazar con tu Secret de Sandbox
+		log.Println("Warning: PAYPAL_SECRET not configured, using development default")
+		paypalConfig.Secret = "EAF3VXSIZfDhEr522LM9UAyVOGn0kVvyiJBaJKPah4iRweg6MpAv2IZR8TDNhqj-9GUZuS17P066shVf"
+	}
+
+	// Si BaseURL no está configurada, usar sandbox por defecto
+	if paypalConfig.BaseURL == "" {
+		paypalConfig.BaseURL = "https://api-m.sandbox.paypal.com"
 	}
 }
 
@@ -84,10 +93,18 @@ func getPayPalAccessToken() (string, error) {
 // CreateOrder crea una orden de PayPal
 func CreateOrder(c *gin.Context) {
 	var request struct {
-		SessionID string `json:"session_id" binding:"required"`
+		SessionID string `json:"session_id" validate:"required"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
+
+	// Validar estructura
+	validationErrors := validation.ValidateStruct(request)
+	if len(validationErrors) > 0 {
+		c.JSON(422, validationErrors.ToAPIError())
 		return
 	}
 
@@ -100,11 +117,13 @@ func CreateOrder(c *gin.Context) {
 	`, request.SessionID).Scan(&cart.ID, &cart.CreatedAt, &cart.UpdatedAt, &cart.SessionID)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Cart not found"})
+		apiErr := errors.NewNotFound("Cart", request.SessionID)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cart"})
+		apiErr := errors.NewDatabaseError("Fetch cart", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -112,7 +131,8 @@ func CreateOrder(c *gin.Context) {
 	cart.CartItems = getCartItemsWithProducts(cart.ID)
 
 	if len(cart.CartItems) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cart is empty"})
+		apiErr := errors.NewBadRequest("Cart is empty")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -137,7 +157,8 @@ func CreateOrder(c *gin.Context) {
 	// Crear orden en PayPal
 	token, err := getPayPalAccessToken()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get PayPal token"})
+		apiErr := errors.NewInternal("Failed to get PayPal token")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -170,7 +191,8 @@ func CreateOrder(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create PayPal order"})
+		apiErr := errors.NewInternal("Failed to communicate with PayPal")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer resp.Body.Close()
@@ -179,12 +201,14 @@ func CreateOrder(c *gin.Context) {
 
 	var paypalOrder map[string]interface{}
 	if err := json.Unmarshal(body, &paypalOrder); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse PayPal response"})
+		apiErr := errors.NewInternal("Failed to parse PayPal response")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "PayPal order creation failed", "details": paypalOrder})
+		apiErr := errors.NewInternal("PayPal order creation failed")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -204,14 +228,15 @@ func CreateOrder(c *gin.Context) {
 	`, request.SessionID, paypalOrderid, total)
 
 	if err != nil {
-		log.Printf("Failed to save order: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save order", "details": err.Error()})
+		apiErr := errors.NewDatabaseError("Insert order", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	orderID, err := result.LastInsertId()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get order id"})
+		apiErr := errors.NewDatabaseError("Get order ID", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -400,6 +425,11 @@ func getOrderItemsWithProducts(orderID int64) []models.OrderItem {
 // GetOrder obtiene los detalles de una orden
 func GetOrder(c *gin.Context) {
 	orderid := c.Param("id")
+	if orderid == "" {
+		apiErr := errors.NewBadRequest("Order id is required")
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	var order models.Order
 	var finalized int
@@ -413,25 +443,28 @@ func GetOrder(c *gin.Context) {
 		&order.CompletedAt, &finalized)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		apiErr := errors.NewNotFound("Order", orderid)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch order"})
+		apiErr := errors.NewDatabaseError("Fetch order", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	order.Finalized = finalized == 1
 	order.OrderItems = getOrderItemsWithProducts(order.ID)
 
-	c.JSON(http.StatusOK, order)
+	c.JSON(200, order)
 }
 
 // GetOrders obtiene todas las órdenes de una sesión
 func GetOrders(c *gin.Context) {
 	sessionid := c.Query("session_id")
 	if sessionid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
+		apiErr := errors.NewBadRequest("session_id query parameter is required")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -443,7 +476,8 @@ func GetOrders(c *gin.Context) {
 		ORDER BY created_at DESC
 	`, sessionid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch orders"})
+		apiErr := errors.NewDatabaseError("Fetch orders", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -463,7 +497,7 @@ func GetOrders(c *gin.Context) {
 		orders = append(orders, order)
 	}
 
-	c.JSON(http.StatusOK, orders)
+	c.JSON(200, orders)
 }
 
 // GetAllOrders obtiene todas las órdenes del sistema (solo para administradores)
@@ -475,7 +509,8 @@ func GetAllOrders(c *gin.Context) {
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch orders"})
+		apiErr := errors.NewDatabaseError("Fetch all orders", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()

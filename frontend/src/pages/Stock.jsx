@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Badge, Spinner, Alert, Form, InputGroup } from 'react-bootstrap';
 import { Building, Search, BoxSeam } from 'react-bootstrap-icons';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Stock() {
   const [productos, setProductos] = useState([]);

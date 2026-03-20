@@ -2,7 +2,7 @@ import { Container, Card, Row, Col, ListGroup, Badge, Spinner, Alert } from 'rea
 import { CheckCircle } from 'react-bootstrap-icons';
 import { useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { getOrder } from '../services/api';
+import { getOrder } from '../services/resourceApi';
 
 function OrderConfirmation() {
   const { orderID } = useParams();

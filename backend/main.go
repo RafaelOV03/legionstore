@@ -2,17 +2,37 @@ package main
 
 import (
 	"log"
+	"os"
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("INFO: No .env file found, using environment variables")
+	} else {
+		log.Println("INFO: .env file loaded successfully")
+	}
+	
+	// Debug: Print loaded environment variables
+	port := os.Getenv("PORT")
+	dbPath := os.Getenv("DB_PATH")
+	log.Printf("DEBUG: PORT=%s, DB_PATH=%s\n", port, dbPath)
+}
 
 // CorsMiddleware es un middleware para manejar CORS
 func CorsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		corsOrigins := os.Getenv("CORS_ORIGINS")
+		if corsOrigins == "" {
+			corsOrigins = "*" // Por defecto permitir todos en desarrollo
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Origin", corsOrigins)
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
@@ -31,15 +51,32 @@ func main() {
 	database.InitDatabase()
 	log.Println("Database initialized.")
 
+	// Inicializar repositorios
+	log.Println("Initializing repositories...")
+	controllers.InitProductRepository()
+	log.Println("Repositories initialized.")
+
 	// Crear el router de Gin
 	log.Println("Creating Gin router...")
 	router := gin.Default()
 	log.Println("Gin router created.")
 
+	// Usar middleware de manejo de errores (debe ser primero)
+	log.Println("Using error handling middleware...")
+	router.Use(middleware.ErrorHandlingMiddleware())
+	router.Use(middleware.JSONErrorMiddleware())
+	log.Println("Error handling middleware used.")
+
 	// Usar el middleware de CORS
 	log.Println("Using CORS middleware...")
 	router.Use(CorsMiddleware())
 	log.Println("CORS middleware used.")
+
+	// Configurar Gin mode desde ENV
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode != "" {
+		gin.SetMode(ginMode)
+	}
 
 	// Agrupar las rutas de la API
 	log.Println("Grouping API routes...")
@@ -287,8 +324,14 @@ func main() {
 	// Servir archivos estáticos del directorio uploads
 	router.Static("/uploads", "./uploads")
 
+	// Obtener puerto desde ENV
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Puerto por defecto
+	}
+
 	// Iniciar el servidor
-	log.Println("Starting server on port 8080...")
+	log.Printf("Starting server on port %s...\n", port)
 	log.Println("Sistema de Gestión de Inventario - Backend listo")
-	router.Run(":8080")
+	router.Run(":" + port)
 }

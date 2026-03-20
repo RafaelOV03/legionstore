@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Table, Spinner, Alert } from 'react-bootstrap';
 import { GraphUp, Calendar, CashStack, GraphUpArrow, GraphDownArrow } from 'react-bootstrap-icons';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Reportes() {
   const [reporte, setReporte] = useState(null);
