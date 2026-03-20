@@ -51,7 +51,7 @@ func GetSede(c *gin.Context) {
 		Scan(&sede.ID, &sede.CreatedAt, &sede.UpdatedAt, &sede.Nombre, &sede.Direccion, &sede.Telefono, &activa)
 
 	if err == sql.ErrNoRows {
-		apiErr := errors.NewNotFound("Sede", "id", id)
+		apiErr := errors.NewNotFound("Sede", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -126,7 +126,7 @@ func UpdateSede(c *gin.Context) {
 	var exists int
 	err = database.DB.QueryRow("SELECT 1 FROM sedes WHERE id = ?", id).Scan(&exists)
 	if err != nil {
-		apiErr := errors.NewNotFound("Sede", "id", id)
+		apiErr := errors.NewNotFound("Sede", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -162,7 +162,7 @@ func DeleteSede(c *gin.Context) {
 	var exists int
 	err = database.DB.QueryRow("SELECT 1 FROM sedes WHERE id = ?", id).Scan(&exists)
 	if err != nil {
-		apiErr := errors.NewNotFound("Sede", "id", id)
+		apiErr := errors.NewNotFound("Sede", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -200,7 +200,8 @@ func GetStockMultisede(c *gin.Context) {
 		ORDER BY p.name, s.nombre
 	`)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stock"})
+		apiErr := errors.NewDatabaseError("Fetch stock", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -230,14 +231,15 @@ func GetStockMultisede(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, items)
+	c.JSON(200, items)
 }
 
 // GetStockBySede obtiene el stock de una sede específica
 func GetStockBySede(c *gin.Context) {
 	sedeID, err := strconv.ParseInt(c.Param("sede_id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sede ID"})
+		apiErr := errors.NewBadRequest("Invalid sede ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -250,7 +252,8 @@ func GetStockBySede(c *gin.Context) {
 		ORDER BY p.name
 	`, sedeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stock"})
+		apiErr := errors.NewDatabaseError("Fetch stock by location", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -281,7 +284,7 @@ func GetStockBySede(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, items)
+	c.JSON(200, items)
 }
 
 // UpdateStock actualiza el stock de un producto en una sede
@@ -295,7 +298,8 @@ func UpdateStock(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -314,10 +318,11 @@ func UpdateStock(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
+		apiErr := errors.NewDatabaseError("Update stock", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	logAuditoria(c, "actualizar_stock", "stock_sedes", req.ProductoID, "", "")
-	c.JSON(http.StatusOK, gin.H{"message": "Stock updated successfully"})
+	c.JSON(200, gin.H{"message": "Stock updated successfully"})
 }

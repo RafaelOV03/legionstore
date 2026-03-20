@@ -6,6 +6,7 @@ import (
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -82,6 +83,17 @@ func main() {
 	log.Println("Grouping API routes...")
 	api := router.Group("/api")
 	{
+		// ==========================================
+		// HEALTH CHECK (sin autenticación)
+		// ==========================================
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"status": "ok",
+				"service": "legionstore-backend",
+				"timestamp": time.Now().Unix(),
+			})
+		})
+
 		// ==========================================
 		// RUTAS DE AUTENTICACIÓN (públicas)
 		// ==========================================

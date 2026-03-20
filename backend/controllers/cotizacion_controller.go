@@ -271,7 +271,7 @@ func UpdateCotizacionEstado(c *gin.Context) {
 	var estadoAnterior string
 	err = database.DB.QueryRow("SELECT estado FROM cotizaciones WHERE id = ?", id).Scan(&estadoAnterior)
 	if err != nil {
-		apiErr := errors.NewNotFound("Cotización", "id", id)
+		apiErr := errors.NewNotFound("Cotización", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -301,7 +301,7 @@ func DeleteCotizacion(c *gin.Context) {
 	var exists int
 	err = database.DB.QueryRow("SELECT 1 FROM cotizaciones WHERE id = ?", id).Scan(&exists)
 	if err != nil {
-		apiErr := errors.NewNotFound("Cotización", "id", id)
+		apiErr := errors.NewNotFound("Cotización", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -329,7 +329,8 @@ func DeleteCotizacion(c *gin.Context) {
 func ConvertirCotizacionAVenta(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cotización ID"})
+		apiErr := errors.NewBadRequest("Invalid cotización ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -341,20 +342,28 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 	err = database.DB.QueryRow("SELECT estado, sede_id, total, cliente_nombre FROM cotizaciones WHERE id = ?", id).
 		Scan(&estado, &sedeID, &total, &clienteNombre)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
+		apiErr := errors.NewNotFound("Cotización", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	if estado != "aprobada" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Solo se pueden convertir cotizaciones aprobadas"})
+		apiErr := errors.NewConflict("Can only convert approved quotations")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	userID, _ := c.Get("userid")
+	userID, exists := c.Get("userid")
+	if !exists {
+		apiErr := errors.ErrUnauthorized
+		c.JSON(apiErr.Code, apiErr)
+		return
+	}
 
 	tx, err := database.DB.Begin()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+		apiErr := errors.NewDatabaseError("Start transaction", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -370,7 +379,8 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 
 	if err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create venta"})
+		apiErr := errors.NewDatabaseError("Create sale", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -405,7 +415,8 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 			ventaID, item.ProductoID, item.Cantidad, item.PrecioUnitario, item.Subtotal)
 		if err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add venta items"})
+			apiErr := errors.NewDatabaseError("Insert sale items", err)
+			c.JSON(apiErr.Code, apiErr)
 			return
 		}
 
@@ -415,7 +426,8 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 			item.Cantidad, item.ProductoID, sedeID)
 		if err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
+			apiErr := errors.NewDatabaseError("Update stock", err)
+			c.JSON(apiErr.Code, apiErr)
 			return
 		}
 	}
@@ -424,21 +436,23 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 	tx.Exec("UPDATE cotizaciones SET estado = 'convertida', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 
 	if err = tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		apiErr := errors.NewDatabaseError("Commit transaction", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	itemsJSON, _ := json.Marshal(items)
 	logAuditoria(c, "convertir_venta", "cotizacion", id, "", string(itemsJSON))
 
-	c.JSON(http.StatusCreated, gin.H{"venta_id": ventaID, "numero_venta": numeroVenta})
+	c.JSON(201, gin.H{"venta_id": ventaID, "numero_venta": numeroVenta})
 }
 
 // GenerarPDFCotizacion genera un PDF de la cotización (retorna datos para frontend)
 func GenerarPDFCotizacion(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cotización ID"})
+		apiErr := errors.NewBadRequest("Invalid cotización ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -471,7 +485,8 @@ func GenerarPDFCotizacion(c *gin.Context) {
 		&cot.UsuarioNombre, &cot.SedeNombre, &cot.SedeDireccion)
 
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
+		apiErr := errors.NewNotFound("Cotización", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -500,5 +515,5 @@ func GenerarPDFCotizacion(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"cotizacion": cot, "items": items})
+	c.JSON(200, gin.H{"cotizacion": cot, "items": items})
 }

@@ -106,7 +106,7 @@ func GetRMA(c *gin.Context) {
 			&rma.UsuarioID, &rma.SedeID, &rma.Notas)
 
 	if err == sql.ErrNoRows {
-		apiErr := errors.NewNotFound("RMA", "id", id)
+		apiErr := errors.NewNotFound("RMA", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -261,7 +261,7 @@ func UpdateRMA(c *gin.Context) {
 	var estadoAnterior string
 	err = database.DB.QueryRow("SELECT estado FROM rmas WHERE id = ?", id).Scan(&estadoAnterior)
 	if err != nil {
-		apiErr := errors.NewNotFound("RMA", "id", id)
+		apiErr := errors.NewNotFound("RMA", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -310,7 +310,7 @@ func DeleteRMA(c *gin.Context) {
 	var exists int
 	err = database.DB.QueryRow("SELECT 1 FROM rmas WHERE id = ?", id).Scan(&exists)
 	if err != nil {
-		apiErr := errors.NewNotFound("RMA", "id", id)
+		apiErr := errors.NewNotFound("RMA", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}

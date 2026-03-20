@@ -59,7 +59,7 @@ func GetProveedor(c *gin.Context) {
 			&p.Telefono, &p.Email, &p.Contacto, &activo)
 
 	if err == sql.ErrNoRows {
-		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		apiErr := errors.NewNotFound("Proveedor", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -182,7 +182,7 @@ func UpdateProveedor(c *gin.Context) {
 	var proveedor models.Proveedor
 	err = database.DB.QueryRow("SELECT id FROM proveedores WHERE id = ?", id).Scan(&proveedor.ID)
 	if err != nil {
-		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		apiErr := errors.NewNotFound("Proveedor", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -221,7 +221,7 @@ func DeleteProveedor(c *gin.Context) {
 	var exists int
 	err = database.DB.QueryRow("SELECT 1 FROM proveedores WHERE id = ?", id).Scan(&exists)
 	if err != nil {
-		apiErr := errors.NewNotFound("Proveedor", "id", id)
+		apiErr := errors.NewNotFound("Proveedor", id)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
@@ -290,7 +290,8 @@ func GetDeudas(c *gin.Context) {
 
 	rows, err := database.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch deudas"})
+		apiErr := errors.NewDatabaseError("Fetch provider debts", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -331,7 +332,7 @@ func GetDeudas(c *gin.Context) {
 		deudas = append(deudas, d)
 	}
 
-	c.JSON(http.StatusOK, deudas)
+	c.JSON(200, deudas)
 }
 
 // CreateDeuda crea una nueva deuda de proveedor
@@ -346,7 +347,8 @@ func CreateDeuda(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -364,21 +366,23 @@ func CreateDeuda(c *gin.Context) {
 		req.ProveedorID, req.NumeroFactura, req.MontoTotal, fechaVenc, req.Notas)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create deuda"})
+		apiErr := errors.NewDatabaseError("Create provider debt", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	deudaID, _ := result.LastInsertId()
 	logAuditoria(c, "crear", "deuda_proveedor", deudaID, "", req.NumeroFactura)
 
-	c.JSON(http.StatusCreated, gin.H{"id": deudaID})
+	c.JSON(201, gin.H{"id": deudaID})
 }
 
 // RegistrarPago registra un pago a una deuda
 func RegistrarPago(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deuda ID"})
+		apiErr := errors.NewBadRequest("Invalid deuda ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -390,7 +394,8 @@ func RegistrarPago(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apiErr := errors.NewBadRequest(err.Error())
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -400,13 +405,15 @@ func RegistrarPago(c *gin.Context) {
 	var montoTotal, montoPagado float64
 	err = database.DB.QueryRow("SELECT monto, monto_pagado FROM deudas_proveedores WHERE id = ?", id).Scan(&montoTotal, &montoPagado)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Deuda not found"})
+		apiErr := errors.NewNotFound("Deuda", id)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
 	saldoPendiente := montoTotal - montoPagado
 	if req.Monto > saldoPendiente {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "El monto excede el saldo pendiente"})
+		apiErr := errors.NewBadRequest("El monto excede el saldo pendiente")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -420,7 +427,8 @@ func RegistrarPago(c *gin.Context) {
 
 	if err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register pago"})
+		apiErr := errors.NewDatabaseError("Register payment", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -439,7 +447,8 @@ func RegistrarPago(c *gin.Context) {
 
 	if err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update deuda"})
+		apiErr := errors.NewDatabaseError("Update debt", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -447,7 +456,7 @@ func RegistrarPago(c *gin.Context) {
 
 	logAuditoria(c, "pago", "deuda_proveedor", id, "", strconv.FormatFloat(req.Monto, 'f', 2, 64))
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(200, gin.H{
 		"message":     "Pago registered successfully",
 		"nuevo_saldo": montoTotal - nuevoMontoPagado,
 		"estado":      nuevoEstado,
@@ -458,7 +467,8 @@ func RegistrarPago(c *gin.Context) {
 func GetPagosDeuda(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deuda ID"})
+		apiErr := errors.NewBadRequest("Invalid deuda ID")
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
@@ -470,7 +480,8 @@ func GetPagosDeuda(c *gin.Context) {
 		ORDER BY pp.created_at DESC
 	`, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch pagos"})
+		apiErr := errors.NewDatabaseError("Fetch provider payments", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -493,7 +504,7 @@ func GetPagosDeuda(c *gin.Context) {
 		pagos = append(pagos, p)
 	}
 
-	c.JSON(http.StatusOK, pagos)
+	c.JSON(200, pagos)
 }
 
 // GetResumenDeudas obtiene un resumen de deudas por proveedor
@@ -532,7 +543,8 @@ func GetResumenDeudas(c *gin.Context) {
 		ORDER BY saldo_total DESC
 	`)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch resumen"})
+		apiErr := errors.NewDatabaseError("Fetch debt summary", err)
+		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 	defer rows.Close()
@@ -556,7 +568,7 @@ func GetResumenDeudas(c *gin.Context) {
 		resumen = append(resumen, r)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(200, gin.H{
 		"proveedores":   resumen,
 		"total_general": totalDeuda,
 		"total_deuda":   totalDeuda,
