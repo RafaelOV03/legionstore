@@ -23,7 +23,7 @@ services:
       - DB_PATH=./legionstore.db
       
       # CORS Configuration
-      - CORS_ORIGINS=http://localhost:5173,http://localhost,http://frontend:5173
+      - CORS_ORIGINS=http://localhost:5173
     volumes:
       - ./backend:/app
       - go_dir:/go

@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -38,7 +38,7 @@ const PageLoader = () => (
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="min-vh-100">
           <Navigation />
           <Suspense fallback={<PageLoader />}>
@@ -197,7 +197,7 @@ function App() {
             </Routes>
           </Suspense>
         </div>
-      </Router>
+      </BrowserRouter>
     </AuthProvider>
   );
 }

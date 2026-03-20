@@ -6,6 +6,7 @@ import (
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,9 +31,35 @@ func CorsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		corsOrigins := os.Getenv("CORS_ORIGINS")
 		if corsOrigins == "" {
-			corsOrigins = "*" // Por defecto permitir todos en desarrollo
+			corsOrigins = "http://localhost:5173" // Default para desarrollo
 		}
-		c.Writer.Header().Set("Access-Control-Allow-Origin", corsOrigins)
+
+		// Procesar orígenes (formato: "origin1,origin2,origin3")
+		allowedOrigins := []string{}
+		if corsOrigins != "*" {
+			allowedOrigins = strings.Split(strings.TrimSpace(corsOrigins), ",")
+			// Limpiar espacios en blanco de cada origen
+			for i := range allowedOrigins {
+				allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+			}
+		}
+
+		// Obtener el origen de la solicitud
+		requestOrigin := c.Request.Header.Get("Origin")
+
+		// Permitir si es wildcard o si el origen está en la lista
+		if corsOrigins == "*" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		} else {
+			// Verificar si el origen está permitido
+			for _, allowed := range allowedOrigins {
+				if requestOrigin == allowed {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", allowed)
+					break
+				}
+			}
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
