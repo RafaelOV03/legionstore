@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import InventarioNavigation from './components/InventarioNavigation';
+import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
 import { lazy, Suspense } from 'react';
 import { Spinner, Container } from 'react-bootstrap';
@@ -40,7 +40,7 @@ function App() {
     <AuthProvider>
       <Router>
         <div className="min-vh-100">
-          <InventarioNavigation />
+          <Navigation />
           <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* Dashboard */}
