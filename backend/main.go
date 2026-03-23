@@ -278,20 +278,23 @@ func main() {
 	log.Println("API routes grouped.")
 
 	// Servir archivos estáticos del directorio uploads
-	router.Static("/uploads", "./uploads")
+    router.Static("/uploads", "./uploads")
 
-	// Iniciar el servidor
-	log.Println("Starting server on port 8080...")
-	log.Println("Sistema de Gestión de Inventario - Backend listo")
-	// Obtener el puerto de las variables de entorno o usar 8080 por defecto
-	// port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+    // --- CONFIGURACIÓN DE ARRANQUE ---
+    
+    // Obtener el puerto de las variables de entorno o usar 8080 por defecto
+    port := os.Getenv("PORT") // <--- ¡Asegúrate de que NO tenga las barras // al principio!
+    if port == "" {
+        port = "8080"
+    }
 
-	log.Printf("Starting server on port %s...", port)
-	log.Println("Sistema de Gestión de Inventario - Backend listo")
-	
-	// Iniciar el servidor con el puerto configurado
-	router.Run(":" + port)
+    // Un banner profesional para identificar el proyecto en la consola
+    log.Println("==================================================")
+    log.Println("   LEGION STORE - BACKEND SERVICES (UPDS 2026)    ")
+    log.Println("   Status: ONLINE                                 ")
+    log.Println("   Running on port: " + port                      )
+    log.Println("==================================================")
+    
+    // Iniciar el servidor con el puerto configurado
+    router.Run(":" + port)
 }
