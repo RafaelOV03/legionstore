@@ -35,6 +35,13 @@ type Claims struct {
 }
 
 // GenerateToken genera un token JWT para un usuario
+// Parámetros:
+//   - userid: ID del usuario
+//   - email: Correo del usuario
+//   - roleid: ID del rol
+//   - roleName: Nombre del rol
+//   - permissions: Lista de permisos del usuario
+// Retorna: token JWT válido por 24 horas o error
 func GenerateToken(userid uint, email string, roleid uint, roleName string, permissions []string) (string, error) {
 	claims := Claims{
 		Userid:      userid,
