@@ -54,19 +54,23 @@ func GenerateToken(userid uint, email string, roleid uint, roleName string, perm
 
 // ValidateToken valida un token JWT y retorna las claims
 func ValidateToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	})
+    if tokenString == "" {
+        return nil, jwt.ErrSignatureInvalid
+    }
 
-	if err != nil {
-		return nil, err
-	}
+    token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+        return jwtSecret, nil
+    })
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
+    if err != nil {
+        return nil, err
+    }
 
-	return nil, jwt.ErrSignatureInvalid
+    if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+        return claims, nil
+    }
+
+    return nil, jwt.ErrSignatureInvalid
 }
 
 // AuthMiddleware verifica que el usuario esté autenticado
@@ -79,10 +83,10 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
+		 tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims, err := ValidateToken(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
 			c.Abort()
 			return
 		}
@@ -146,7 +150,21 @@ func RequireRole(roleName string) gin.HandlerFunc {
 	}
 }
 
-// AdminMiddleware verifica que el usuario sea administrador (deprecated, usar RequireRole)
-func AdminMiddleware() gin.HandlerFunc {
-	return RequireRole("administrador")
+// RequireRole verifica que el usuario tenga un rol específico
+func RequireRole(roleName string) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        if roleName == "" {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Rol no configurado"})
+            c.Abort()
+            return
+        }
+
+        userRole, exists := c.Get("roleName")
+        if !exists || userRole != roleName {
+            c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient role"})
+            c.Abort()
+            return
+        }
+        c.Next()
+    }
 }
