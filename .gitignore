@@ -4,3 +4,4 @@ build/*
 */package-lock.json
 backend/inventario.db
 inventario.db-shm
+inventario.db-wal
