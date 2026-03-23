@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
@@ -282,5 +283,15 @@ func main() {
 	// Iniciar el servidor
 	log.Println("Starting server on port 8080...")
 	log.Println("Sistema de Gestión de Inventario - Backend listo")
-	router.Run(":8080")
+	// Obtener el puerto de las variables de entorno o usar 8080 por defecto
+	// port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Starting server on port %s...", port)
+	log.Println("Sistema de Gestión de Inventario - Backend listo")
+	
+	// Iniciar el servidor con el puerto configurado
+	router.Run(":" + port)
 }
