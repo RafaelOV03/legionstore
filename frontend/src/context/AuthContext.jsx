@@ -66,17 +66,14 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('sessionId'); // Limpiar el carrito al cerrar sesión
   }, []);
 
-  const hasPermission = (permission) => {
-    // Verificar en user.permissions (si existe directamente)
-    if (user?.permissions?.includes(permission)) {
-      return true;
-    }
-    // Verificar en user.role.permissions (array de objetos)
-    if (user?.role?.permissions) {
-      return user.role.permissions.some(perm => perm.name === permission);
-    }
-    return false;
-  };
+  const hasPermission = useCallback((permission) => {
+    if (!user) return false;
+    
+    const perms = user?.role?.permissions || [];
+    return perms.some(perm => 
+      typeof perm === 'string' ? perm === permission : perm.name === permission
+    );
+  }, [user]);
 
   const hasRole = (roleName) => {
     return user?.role?.name === roleName;
