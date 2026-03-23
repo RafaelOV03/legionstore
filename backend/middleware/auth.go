@@ -158,6 +158,12 @@ func RequireRole(roleName string) gin.HandlerFunc {
             c.Abort()
             return
         }
+		permissions, exists := c.Get("permissions")
+        if !exists {
+            c.JSON(http.StatusForbidden, gin.H{"error": "No permissions found"})
+            c.Abort()
+            return
+        }
 
         userRole, exists := c.Get("roleName")
         if !exists || userRole != roleName {
