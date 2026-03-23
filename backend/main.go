@@ -38,9 +38,9 @@ func main() {
 	log.Println("Grouping API routes...")
 	api := router.Group("/api")
 	{
-		// ==========================================
-		// RUTAS DE AUTENTICACIÓN (públicas)
-		// ==========================================
+		// ------------------------------------------
+		// MÓDULO 1: GESTIÓN DE ACCESO (Auth)
+		// ------------------------------------------
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", controllers.Register)
@@ -50,7 +50,7 @@ func main() {
 		}
 
 		// ==========================================
-		// RUTAS DE PRODUCTOS (inventario)
+		// MÓDULO 2: NÚCLEO DE NEGOCIO (Products & Stock)
 		// ==========================================
 		products := api.Group("/products")
 		{
@@ -69,7 +69,7 @@ func main() {
 		}
 
 		// ==========================================
-		// RUTAS DE SUBIDA DE ARCHIVOS
+		// MÓDULO 3: OPERACIONES Y LOGÍSTICA (RMA, Traspasos, Ordenes)
 		// ==========================================
 		upload := api.Group("/upload")
 		{
@@ -77,9 +77,9 @@ func main() {
 			upload.DELETE("/image", middleware.AuthMiddleware(), middleware.RequirePermission("products.delete"), controllers.DeleteProductImage)
 		}
 
-		// ==========================================
-		// RUTAS DE SEDES Y STOCK MULTISEDE
-		// ==========================================
+		// ------------------------------------------
+		// MÓDULO 4: VENTAS Y LOGÍSTICA (Cotizaciones, Traspasos, RMA)
+		// ------------------------------------------
 		sedes := api.Group("/sedes")
 		sedes.Use(middleware.AuthMiddleware())
 		{
@@ -143,9 +143,9 @@ func main() {
 			traspasos.DELETE("/:id", middleware.RequirePermission("traspasos.delete"), controllers.DeleteTraspaso)
 		}
 
-		// ==========================================
-		// RUTAS DE ÓRDENES DE TRABAJO (técnico)
-		// ==========================================
+		// ------------------------------------------
+		// MÓDULO 5: SERVICIO TÉCNICO E INSUMOS
+		// ------------------------------------------
 		ordenes := api.Group("/ordenes-trabajo")
 		ordenes.Use(middleware.AuthMiddleware())
 		{
@@ -161,9 +161,9 @@ func main() {
 			ordenes.DELETE("/:id", middleware.RequirePermission("ordenes.delete"), controllers.DeleteOrdenTrabajo)
 		}
 
-		// ==========================================
-		// RUTAS DE PROVEEDORES Y DEUDAS (administrador)
-		// ==========================================
+		// ------------------------------------------
+		// MÓDULO 6: FINANZAS Y PROVEEDORES
+		// ------------------------------------------
 		proveedores := api.Group("/proveedores")
 		proveedores.Use(middleware.AuthMiddleware())
 		{
@@ -237,6 +237,10 @@ func main() {
 			segmentaciones.POST("", middleware.RequirePermission("segmentacion.create"), controllers.CreateSegmentacion)
 		}
 
+		// ------------------------------------------
+		// MÓDULO 7: MARKETING Y AUDITORÍA (Reportes)
+		// ------------------------------------------
+
 		promociones := api.Group("/promociones")
 		promociones.Use(middleware.AuthMiddleware())
 		{
@@ -246,9 +250,9 @@ func main() {
 			promociones.DELETE("/:id", middleware.RequirePermission("promociones.delete"), controllers.DeletePromocion)
 		}
 
-		// ==========================================
-		// RUTAS DE USUARIOS (administrador)
-		// ==========================================
+		// ------------------------------------------
+		// MÓDULO 8: ADMINISTRACIÓN DE SISTEMA (Users & Roles)
+		// ------------------------------------------
 		users := api.Group("/users")
 		users.Use(middleware.AuthMiddleware())
 		{
