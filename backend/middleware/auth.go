@@ -13,11 +13,15 @@ import (
 var jwtSecret = []byte(getJWTSecret())
 
 func getJWTSecret() string {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "smartech-secret-key-2024" // Clave por defecto (cambiar en producción)
-	}
-	return secret
+    secret := os.Getenv("JWT_SECRET")
+    if secret == "" {
+        secret = "smartech-secret-key-2024" // Clave por defecto (cambiar en producción)
+    }
+    // Validar que la clave tenga longitud mínima
+    if len(secret) < 16 {
+        panic("JWT_SECRET debe tener al menos 16 caracteres")
+    }
+    return secret
 }
 
 // Claims estructura para el payload del JWT
@@ -70,7 +74,7 @@ func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token no proporcionado"})
 			c.Abort()
 			return
 		}
