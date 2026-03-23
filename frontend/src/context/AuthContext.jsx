@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const AuthContext = createContext(null);
 
@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, [token]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const response = await fetch('http://localhost:8080/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
     return data;
-  };
+  }, []);
 
   const register = async (name, email, password) => {
     const response = await fetch('http://localhost:8080/api/auth/register', {
@@ -56,13 +56,13 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('sessionId'); // Limpiar el carrito al cerrar sesión
-  };
+  }, []);
 
   const hasPermission = (permission) => {
     // Verificar en user.permissions (si existe directamente)
