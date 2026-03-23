@@ -9,27 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-/*
- * ==========================================
- * MIDDLEWARES
- * ==========================================
- */
 
-// CorsMiddleware es un middleware para manejar CORS
-func CorsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	}
-}
 
 /*
  * ==========================================
@@ -50,7 +30,7 @@ func main() {
 
 	// Usar el middleware de CORS
 	log.Println("Using CORS middleware...")
-	router.Use(CorsMiddleware())
+	router.Use(middleware.CorsMiddleware())
 	log.Println("CORS middleware used.")
 
 	// Agrupar las rutas de la API
