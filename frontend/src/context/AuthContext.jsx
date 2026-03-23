@@ -10,8 +10,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     // Cargar usuario desde localStorage al iniciar
     const savedUser = safeGetItem('user');
-    if (savedUser && token) {
+    if (savedUser && token && !isTokenExpired(token)) {
       setUser(JSON.parse(savedUser));
+    } else {
+      logout(); // Token expirado
     }
     setLoading(false);
   }, [token]);
@@ -129,5 +131,14 @@ const safeGetItem = (key) => {
   } catch (e) {
     console.warn(`localStorage not available: ${e.message}`);
     return null;
+  }
+};
+
+const isTokenExpired = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
   }
 };
