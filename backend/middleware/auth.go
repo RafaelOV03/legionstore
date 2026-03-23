@@ -75,30 +75,36 @@ func ValidateToken(tokenString string) (*Claims, error) {
 
 // AuthMiddleware verifica que el usuario esté autenticado
 func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token no proporcionado"})
-			c.Abort()
-			return
-		}
+    return func(c *gin.Context) {
+        authHeader := c.GetHeader("Authorization")
+        if authHeader == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Token no proporcionado"})
+            c.Abort()
+            return
+        }
 
-		 tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := ValidateToken(tokenString)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
-			c.Abort()
-			return
-		}
+        tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+        claims, err := ValidateToken(tokenString)
+        if err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
+            c.Abort()
+            return
+        }
 
-		// Guardar información del usuario en el contexto
-		c.Set("userid", claims.Userid)
-		c.Set("email", claims.Email)
-		c.Set("roleid", claims.Roleid)
-		c.Set("roleName", claims.RoleName)
-		c.Set("permissions", claims.Permissions)
-		c.Next()
-	}
+        // Guardar información del usuario en el contexto
+        c.Set("userid", claims.Userid)
+        c.Set("email", claims.Email)
+        c.Set("roleid", claims.Roleid)
+        c.Set("roleName", claims.RoleName)
+        c.Set("permissions", claims.Permissions)
+        c.Next()
+    }
+}
+
+// AdminMiddleware verifica que el usuario sea administrador
+// Deprecated: usar RequireRole("administrador") en su lugar
+func AdminMiddleware() gin.HandlerFunc {
+    return RequireRole("administrador")
 }
 
 // RequirePermission verifica que el usuario tenga un permiso específico
@@ -136,31 +142,10 @@ func RequirePermission(permission string) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// RequireRole verifica que el usuario tenga un rol específico
-func RequireRole(roleName string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userRole, exists := c.Get("roleName")
-		if !exists || userRole != roleName {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient role"})
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
-}
-
-// RequireRole verifica que el usuario tenga un rol específico
 func RequireRole(roleName string) gin.HandlerFunc {
     return func(c *gin.Context) {
         if roleName == "" {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Rol no configurado"})
-            c.Abort()
-            return
-        }
-		permissions, exists := c.Get("permissions")
-        if !exists {
-            c.JSON(http.StatusForbidden, gin.H{"error": "No permissions found"})
             c.Abort()
             return
         }
@@ -174,3 +159,6 @@ func RequireRole(roleName string) gin.HandlerFunc {
         c.Next()
     }
 }
+
+
+
