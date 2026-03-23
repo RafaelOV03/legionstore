@@ -9,7 +9,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Cargar usuario desde localStorage al iniciar
-    const savedUser = localStorage.getItem('user');
+    const savedUser = safeGetItem('user');
     if (savedUser && token) {
       setUser(JSON.parse(savedUser));
     }
@@ -120,4 +120,14 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+};
+
+// Agregar función auxiliar
+const safeGetItem = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    console.warn(`localStorage not available: ${e.message}`);
+    return null;
+  }
 };
