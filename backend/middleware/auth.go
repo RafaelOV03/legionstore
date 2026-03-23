@@ -13,11 +13,15 @@ import (
 var jwtSecret = []byte(getJWTSecret())
 
 func getJWTSecret() string {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "smartech-secret-key-2024" // Clave por defecto (cambiar en producción)
-	}
-	return secret
+    secret := os.Getenv("JWT_SECRET")
+    if secret == "" {
+        secret = "smartech-secret-key-2024" // Clave por defecto (cambiar en producción)
+    }
+    // Validar que la clave tenga longitud mínima
+    if len(secret) < 16 {
+        panic("JWT_SECRET debe tener al menos 16 caracteres")
+    }
+    return secret
 }
 
 // Claims estructura para el payload del JWT
@@ -31,6 +35,13 @@ type Claims struct {
 }
 
 // GenerateToken genera un token JWT para un usuario
+// Parámetros:
+//   - userid: ID del usuario
+//   - email: Correo del usuario
+//   - roleid: ID del rol
+//   - roleName: Nombre del rol
+//   - permissions: Lista de permisos del usuario
+// Retorna: token JWT válido por 24 horas o error
 func GenerateToken(userid uint, email string, roleid uint, roleName string, permissions []string) (string, error) {
 	claims := Claims{
 		Userid:      userid,
@@ -50,47 +61,57 @@ func GenerateToken(userid uint, email string, roleid uint, roleName string, perm
 
 // ValidateToken valida un token JWT y retorna las claims
 func ValidateToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	})
+    if tokenString == "" {
+        return nil, jwt.ErrSignatureInvalid
+    }
 
-	if err != nil {
-		return nil, err
-	}
+    token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+        return jwtSecret, nil
+    })
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
+    if err != nil {
+        return nil, err
+    }
 
-	return nil, jwt.ErrSignatureInvalid
+    if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+        return claims, nil
+    }
+
+    return nil, jwt.ErrSignatureInvalid
 }
 
 // AuthMiddleware verifica que el usuario esté autenticado
 func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
+    return func(c *gin.Context) {
+        authHeader := c.GetHeader("Authorization")
+        if authHeader == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Token no proporcionado"})
+            c.Abort()
+            return
+        }
 
-		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
-		claims, err := ValidateToken(tokenString)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-			c.Abort()
-			return
-		}
+        tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+        claims, err := ValidateToken(tokenString)
+        if err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
+            c.Abort()
+            return
+        }
 
-		// Guardar información del usuario en el contexto
-		c.Set("userid", claims.Userid)
-		c.Set("email", claims.Email)
-		c.Set("roleid", claims.Roleid)
-		c.Set("roleName", claims.RoleName)
-		c.Set("permissions", claims.Permissions)
-		c.Next()
-	}
+        // Guardar información del usuario en el contexto
+        c.Set("userid", claims.Userid)
+        c.Set("email", claims.Email)
+        c.Set("roleid", claims.Roleid)
+        c.Set("roleName", claims.RoleName)
+        c.Set("permissions", claims.Permissions)
+        c.Next()
+    }
+}
+
+// AdminMiddleware verifica que el usuario sea administrador
+// Deprecated: usar RequireRole("administrador") en su lugar
+func AdminMiddleware() gin.HandlerFunc {
+    return RequireRole("administrador")
 }
 
 // RequirePermission verifica que el usuario tenga un permiso específico
@@ -128,21 +149,23 @@ func RequirePermission(permission string) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// RequireRole verifica que el usuario tenga un rol específico
 func RequireRole(roleName string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userRole, exists := c.Get("roleName")
-		if !exists || userRole != roleName {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient role"})
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
+    return func(c *gin.Context) {
+        if roleName == "" {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Rol no configurado"})
+            c.Abort()
+            return
+        }
+
+        userRole, exists := c.Get("roleName")
+        if !exists || userRole != roleName {
+            c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient role"})
+            c.Abort()
+            return
+        }
+        c.Next()
+    }
 }
 
-// AdminMiddleware verifica que el usuario sea administrador (deprecated, usar RequireRole)
-func AdminMiddleware() gin.HandlerFunc {
-	return RequireRole("administrador")
-}
+
+

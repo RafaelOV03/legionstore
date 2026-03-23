@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
@@ -9,21 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CorsMiddleware es un middleware para manejar CORS
-func CorsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
 
-		c.Next()
-	}
-}
+/*
+ * ==========================================
+ * PUNTO DE ENTRADA PRINCIPAL
+ * ==========================================
+ */
 
 func main() {
 	// Inicializar la base de datos
@@ -38,7 +31,7 @@ func main() {
 
 	// Usar el middleware de CORS
 	log.Println("Using CORS middleware...")
-	router.Use(CorsMiddleware())
+	router.Use(middleware.CorsMiddleware())
 	log.Println("CORS middleware used.")
 
 	// Agrupar las rutas de la API
@@ -290,5 +283,15 @@ func main() {
 	// Iniciar el servidor
 	log.Println("Starting server on port 8080...")
 	log.Println("Sistema de Gestión de Inventario - Backend listo")
-	router.Run(":8080")
+	// Obtener el puerto de las variables de entorno o usar 8080 por defecto
+	// port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Starting server on port %s...", port)
+	log.Println("Sistema de Gestión de Inventario - Backend listo")
+	
+	// Iniciar el servidor con el puerto configurado
+	router.Run(":" + port)
 }
