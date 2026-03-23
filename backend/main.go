@@ -9,6 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+/*
+ * ==========================================
+ * MIDDLEWARES
+ * ==========================================
+ */
+
 // CorsMiddleware es un middleware para manejar CORS
 func CorsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -24,6 +30,12 @@ func CorsMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+/*
+ * ==========================================
+ * PUNTO DE ENTRADA PRINCIPAL
+ * ==========================================
+ */
 
 func main() {
 	// Inicializar la base de datos
