@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	//_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var DB *sql.DB
@@ -16,7 +17,8 @@ func InitDatabase() {
 	log.Println("Connecting to database...")
 
 	// Configurar SQLite para modo WAL para mejor concurrencia
-	DB, err = sql.Open("sqlite3", "./inventario.db?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000")
+	// Se cambio "sqlite3" por "sqlite".
+	DB, err = sql.Open("sqlite"/*"sqlite3"*/, "./inventario.db?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}

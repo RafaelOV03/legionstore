@@ -287,7 +287,7 @@ func main() {
     // --- CONFIGURACIÓN DE ARRANQUE ---
     
     // Obtener el puerto de las variables de entorno o usar 8080 por defecto
-    port := os.Getenv("PORT") // <--- ¡Asegúrate de que NO tenga las barras // al principio!
+    port := os.Getenv("PORT") 
     if port == "" {
         port = "8080"
     }
