@@ -296,7 +296,7 @@ func main() {
     log.Println("==================================================")
     log.Println("   LEGION STORE - BACKEND SERVICES (UPDS 2026)    ")
     log.Println("   Status: ONLINE                                 ")
-    log.Println("   Running on port: " + port                      )
+    log.Println("   Running on port: " + port                       )
     log.Println("==================================================")
     
     // Iniciar el servidor con el puerto configurado
