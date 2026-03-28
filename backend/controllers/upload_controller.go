@@ -1,20 +1,24 @@
 package controllers
 
 import (
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"smartech/backend/database"
-	"smartech/backend/models"
+	"smartech/backend/repositories"
+	"smartech/backend/services"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+func getUploadService() *services.UploadService {
+	repo := repositories.NewUploadRepository(database.DB)
+	return services.NewUploadService(repo)
+}
 
 // UploadProductImage sube una imagen de producto
 func UploadProductImage(c *gin.Context) {
@@ -130,9 +134,8 @@ func GetProductImages(c *gin.Context) {
 		return
 	}
 
-	var images string
-	err = database.DB.QueryRow("SELECT images FROM products WHERE id = ?", productid).Scan(&images)
-	if err == sql.ErrNoRows {
+	images, err := getUploadService().GetProductImages(productid)
+	if err == services.ErrUploadProductNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		return
 	}
@@ -141,13 +144,7 @@ func GetProductImages(c *gin.Context) {
 		return
 	}
 
-	// Parsear el JSON de imágenes
-	var imageList []string
-	if images != "" {
-		json.Unmarshal([]byte(images), &imageList)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"images": imageList})
+	c.JSON(http.StatusOK, gin.H{"images": images})
 }
 
 // UpdateProductImages actualiza las imágenes de un producto
@@ -155,14 +152,6 @@ func UpdateProductImages(c *gin.Context) {
 	productid, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product id"})
-		return
-	}
-
-	// Verificar que el producto existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM products WHERE id = ?", productid).Scan(&count)
-	if err != nil || count == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		return
 	}
 
@@ -175,31 +164,15 @@ func UpdateProductImages(c *gin.Context) {
 		return
 	}
 
-	// Convertir a JSON
-	imagesJSON, err := json.Marshal(request.Images)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encode images"})
+	product, err := getUploadService().UpdateProductImages(productid, request.Images)
+	if err == services.ErrUploadProductNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		return
 	}
-
-	_, err = database.DB.Exec(`
-		UPDATE products SET images = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-	`, string(imagesJSON), productid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update images"})
 		return
 	}
-
-	// Obtener el producto actualizado
-	var product models.Product
-	var activo int
-	database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, codigo, name, description, precio_compra, precio_venta, category, brand, image_url, images, activo
-		FROM products
-		WHERE id = ?
-	`, productid).Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt, &product.Codigo, &product.Name, &product.Description,
-		&product.PrecioCompra, &product.PrecioVenta, &product.Category, &product.Brand, &product.ImageURL, &product.Images, &activo)
-	product.Activo = activo == 1
 
 	c.JSON(http.StatusOK, product)
 }
