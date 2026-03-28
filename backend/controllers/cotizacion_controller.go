@@ -1,73 +1,32 @@
 package controllers
 
 import (
-	"database/sql"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"smartech/backend/database"
-	"smartech/backend/models"
+	"smartech/backend/repositories"
+	"smartech/backend/services"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+func getCotizacionService() *services.CotizacionService {
+	repo := repositories.NewCotizacionRepository(database.DB)
+	return services.NewCotizacionService(repo)
+}
 
 // GetCotizaciones obtiene todas las cotizaciones
 func GetCotizaciones(c *gin.Context) {
 	estado := c.Query("estado")
 	sedeID := c.Query("sede_id")
 
-	query := `
-		SELECT c.id, c.created_at, c.updated_at, c.numero_cotizacion, c.cliente_nombre, 
-		       c.cliente_telefono, c.cliente_email, c.validez, c.estado, c.total, 
-		       c.descuento, c.notas, c.usuario_id, c.sede_id,
-		       u.name as usuario_nombre, s.nombre as sede_nombre
-		FROM cotizaciones c
-		INNER JOIN users u ON c.usuario_id = u.id
-		INNER JOIN sedes s ON c.sede_id = s.id
-		WHERE 1=1
-	`
-	args := []interface{}{}
-
-	if estado != "" {
-		query += " AND c.estado = ?"
-		args = append(args, estado)
-	}
-	if sedeID != "" {
-		query += " AND c.sede_id = ?"
-		args = append(args, sedeID)
-	}
-
-	query += " ORDER BY c.created_at DESC"
-
-	rows, err := database.DB.Query(query, args...)
+	items, err := getCotizacionService().ListCotizaciones(estado, sedeID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cotizaciones"})
 		return
 	}
-	defer rows.Close()
 
-	type CotizacionView struct {
-		models.Cotizacion
-		UsuarioNombre string `json:"usuario_nombre"`
-		SedeNombre    string `json:"sede_nombre"`
-	}
-
-	var cotizaciones []CotizacionView
-	for rows.Next() {
-		var cot CotizacionView
-		err := rows.Scan(&cot.ID, &cot.CreatedAt, &cot.UpdatedAt, &cot.NumeroCotizacion, &cot.ClienteNombre,
-			&cot.ClienteTelefono, &cot.ClienteEmail, &cot.ValidezDias, &cot.Estado, &cot.Total,
-			&cot.Descuento, &cot.Notas, &cot.UsuarioID, &cot.SedeID,
-			&cot.UsuarioNombre, &cot.SedeNombre)
-		if err != nil {
-			continue
-		}
-		cotizaciones = append(cotizaciones, cot)
-	}
-
-	c.JSON(http.StatusOK, cotizaciones)
+	c.JSON(http.StatusOK, items)
 }
 
 // GetCotizacion obtiene una cotización por ID con sus items
@@ -78,52 +37,14 @@ func GetCotizacion(c *gin.Context) {
 		return
 	}
 
-	var cot models.Cotizacion
-	err = database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, numero_cotizacion, cliente_nombre, 
-		       cliente_telefono, cliente_email, validez, estado, total, 
-		       descuento, notas, usuario_id, sede_id
-		FROM cotizaciones WHERE id = ?`, id).
-		Scan(&cot.ID, &cot.CreatedAt, &cot.UpdatedAt, &cot.NumeroCotizacion, &cot.ClienteNombre,
-			&cot.ClienteTelefono, &cot.ClienteEmail, &cot.ValidezDias, &cot.Estado, &cot.Total,
-			&cot.Descuento, &cot.Notas, &cot.UsuarioID, &cot.SedeID)
-
-	if err == sql.ErrNoRows {
+	cot, items, err := getCotizacionService().GetCotizacion(id)
+	if err == services.ErrCotizacionNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
 		return
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cotización"})
 		return
-	}
-
-	// Obtener items
-	itemRows, _ := database.DB.Query(`
-		SELECT ci.id, ci.producto_id, ci.cantidad, ci.precio_unit, ci.subtotal,
-		       p.name, p.brand, p.codigo
-		FROM cotizacion_items ci
-		INNER JOIN products p ON ci.producto_id = p.id
-		WHERE ci.cotizacion_id = ?
-	`, id)
-	defer itemRows.Close()
-
-	type ItemView struct {
-		ID             int64   `json:"id"`
-		ProductoID     int64   `json:"producto_id"`
-		Cantidad       int     `json:"cantidad"`
-		PrecioUnitario float64 `json:"precio_unitario"`
-		Subtotal       float64 `json:"subtotal"`
-		ProductoNombre string  `json:"producto_nombre"`
-		ProductoMarca  string  `json:"producto_marca"`
-		ProductoCodigo string  `json:"producto_codigo"`
-	}
-
-	var items []ItemView
-	for itemRows.Next() {
-		var item ItemView
-		itemRows.Scan(&item.ID, &item.ProductoID, &item.Cantidad, &item.PrecioUnitario, &item.Subtotal,
-			&item.ProductoNombre, &item.ProductoMarca, &item.ProductoCodigo)
-		items = append(items, item)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"cotizacion": cot, "items": items})
@@ -151,76 +72,39 @@ func CreateCotizacion(c *gin.Context) {
 		return
 	}
 
-	if len(req.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Debe incluir al menos un item"})
-		return
-	}
-
 	userID, exists := c.Get("userid")
 	if !exists || userID == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario no autenticado"})
 		return
 	}
 
-	// Generar número de cotización
-	var count int
-	database.DB.QueryRow("SELECT COUNT(*) FROM cotizaciones").Scan(&count)
-	numeroCotizacion := fmt.Sprintf("COT-%d-%04d", time.Now().Year(), count+1)
-
-	// Calcular total
-	var total float64
-	for _, item := range req.Items {
-		total += float64(item.Cantidad) * item.PrecioUnitario
-	}
-	total = total - req.Descuento
-
-	if req.ValidezDias == 0 {
-		req.ValidezDias = 30
+	inItems := make([]services.CotizacionCreateItemInput, 0, len(req.Items))
+	for _, it := range req.Items {
+		inItems = append(inItems, services.CotizacionCreateItemInput{ProductoID: it.ProductoID, Cantidad: it.Cantidad, PrecioUnitario: it.PrecioUnitario})
 	}
 
-	tx, err := database.DB.Begin()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+	id, numero, total, err := getCotizacionService().CreateCotizacion(services.CreateCotizacionInput{
+		ClienteNombre:   req.ClienteNombre,
+		ClienteTelefono: req.ClienteTelefono,
+		ClienteEmail:    req.ClienteEmail,
+		ValidezDias:     req.ValidezDias,
+		Descuento:       req.Descuento,
+		Notas:           req.Notas,
+		SedeID:          req.SedeID,
+		UsuarioID:       userID,
+		Items:           inItems,
+	})
+	if err == services.ErrCotizacionSinItems {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Debe incluir al menos un item"})
 		return
 	}
-
-	result, err := tx.Exec(`
-		INSERT INTO cotizaciones (numero_cotizacion, cliente_nombre, cliente_telefono, cliente_email, 
-		                          validez, estado, total, descuento, notas, usuario_id, sede_id)
-		VALUES (?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?)`,
-		numeroCotizacion, req.ClienteNombre, req.ClienteTelefono, req.ClienteEmail,
-		req.ValidezDias, total, req.Descuento, req.Notas, userID, req.SedeID)
-
 	if err != nil {
-		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create cotización: " + err.Error()})
 		return
 	}
 
-	cotID, _ := result.LastInsertId()
-
-	// Insertar items
-	for _, item := range req.Items {
-		subtotal := float64(item.Cantidad) * item.PrecioUnitario
-		_, err = tx.Exec(`
-			INSERT INTO cotizacion_items (cotizacion_id, producto_id, cantidad, precio_unit, subtotal)
-			VALUES (?, ?, ?, ?, ?)`,
-			cotID, item.ProductoID, item.Cantidad, item.PrecioUnitario, subtotal)
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add items: " + err.Error()})
-			return
-		}
-	}
-
-	if err = tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
-		return
-	}
-
-	logAuditoria(c, "crear", "cotizacion", cotID, "", numeroCotizacion)
-
-	c.JSON(http.StatusCreated, gin.H{"id": cotID, "numero_cotizacion": numeroCotizacion, "total": total})
+	logAuditoria(c, "crear", "cotizacion", id, "", numero)
+	c.JSON(http.StatusCreated, gin.H{"id": id, "numero_cotizacion": numero, "total": total})
 }
 
 // UpdateCotizacionEstado actualiza el estado de una cotización
@@ -234,37 +118,22 @@ func UpdateCotizacionEstado(c *gin.Context) {
 	var req struct {
 		Estado string `json:"estado" binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Validar estado
-	estados := []string{"pendiente", "aprobada", "rechazada", "vencida", "convertida"}
-	valid := false
-	for _, e := range estados {
-		if e == req.Estado {
-			valid = true
-			break
-		}
-	}
-	if !valid {
+	estadoAnterior, err := getCotizacionService().UpdateEstado(id, req.Estado)
+	if err == services.ErrEstadoCotizacionBad {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Estado inválido"})
 		return
 	}
-
-	var estadoAnterior string
-	database.DB.QueryRow("SELECT estado FROM cotizaciones WHERE id = ?", id).Scan(&estadoAnterior)
-
-	_, err = database.DB.Exec("UPDATE cotizaciones SET estado = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", req.Estado, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update cotización"})
 		return
 	}
 
 	logAuditoria(c, "editar", "cotizacion", id, estadoAnterior, req.Estado)
-
 	c.JSON(http.StatusOK, gin.H{"message": "Cotización updated successfully"})
 }
 
@@ -276,11 +145,7 @@ func DeleteCotizacion(c *gin.Context) {
 		return
 	}
 
-	// Eliminar items primero
-	database.DB.Exec("DELETE FROM cotizacion_items WHERE cotizacion_id = ?", id)
-
-	_, err = database.DB.Exec("DELETE FROM cotizaciones WHERE id = ?", id)
-	if err != nil {
+	if err := getCotizacionService().DeleteCotizacion(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete cotización"})
 		return
 	}
@@ -297,104 +162,22 @@ func ConvertirCotizacionAVenta(c *gin.Context) {
 		return
 	}
 
-	// Verificar que la cotización esté aprobada
-	var estado string
-	var sedeID int64
-	var total float64
-	var clienteNombre string
-	err = database.DB.QueryRow("SELECT estado, sede_id, total, cliente_nombre FROM cotizaciones WHERE id = ?", id).
-		Scan(&estado, &sedeID, &total, &clienteNombre)
-	if err != nil {
+	userID, _ := c.Get("userid")
+	ventaID, numeroVenta, itemsJSON, err := getCotizacionService().ConvertirAVenta(id, userID)
+	if err == services.ErrCotizacionNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
 		return
 	}
-
-	if estado != "aprobada" {
+	if err == services.ErrCotizacionNoAprobada {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Solo se pueden convertir cotizaciones aprobadas"})
 		return
 	}
-
-	userID, _ := c.Get("userid")
-
-	tx, err := database.DB.Begin()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
-		return
-	}
-
-	// Crear venta
-	var count int
-	tx.QueryRow("SELECT COUNT(*) FROM ventas").Scan(&count)
-	numeroVenta := fmt.Sprintf("VNT-%d-%04d", time.Now().Year(), count+1)
-
-	result, err := tx.Exec(`
-		INSERT INTO ventas (numero_venta, cliente_nombre, total, usuario_id, sede_id, cotizacion_id)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		numeroVenta, clienteNombre, total, userID, sedeID, id)
-
-	if err != nil {
-		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create venta"})
 		return
 	}
 
-	ventaID, _ := result.LastInsertId()
-
-	// Obtener items de la cotización y registrar en detalle de venta
-	itemRows, _ := tx.Query(`
-		SELECT producto_id, cantidad, precio_unit, subtotal
-		FROM cotizacion_items WHERE cotizacion_id = ?
-	`, id)
-
-	type Item struct {
-		ProductoID     int64
-		Cantidad       int
-		PrecioUnitario float64
-		Subtotal       float64
-	}
-	var items []Item
-
-	for itemRows.Next() {
-		var item Item
-		itemRows.Scan(&item.ProductoID, &item.Cantidad, &item.PrecioUnitario, &item.Subtotal)
-		items = append(items, item)
-	}
-	itemRows.Close()
-
-	// Insertar items en venta y descontar stock
-	for _, item := range items {
-		_, err = tx.Exec(`
-			INSERT INTO venta_items (venta_id, producto_id, cantidad, precio_unit, subtotal)
-			VALUES (?, ?, ?, ?, ?)`,
-			ventaID, item.ProductoID, item.Cantidad, item.PrecioUnitario, item.Subtotal)
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add venta items"})
-			return
-		}
-
-		// Descontar stock de la sede
-		_, err = tx.Exec(`
-			UPDATE stock_sedes SET cantidad = cantidad - ? WHERE producto_id = ? AND sede_id = ?`,
-			item.Cantidad, item.ProductoID, sedeID)
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
-			return
-		}
-	}
-
-	// Actualizar estado de cotización
-	tx.Exec("UPDATE cotizaciones SET estado = 'convertida', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
-
-	if err = tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
-		return
-	}
-
-	itemsJSON, _ := json.Marshal(items)
-	logAuditoria(c, "convertir_venta", "cotizacion", id, "", string(itemsJSON))
-
+	logAuditoria(c, "convertir_venta", "cotizacion", id, "", itemsJSON)
 	c.JSON(http.StatusCreated, gin.H{"venta_id": ventaID, "numero_venta": numeroVenta})
 }
 
@@ -406,62 +189,14 @@ func GenerarPDFCotizacion(c *gin.Context) {
 		return
 	}
 
-	// Obtener datos completos de la cotización para que el frontend genere el PDF
-	var cot struct {
-		NumeroCotizacion string    `json:"numero_cotizacion"`
-		ClienteNombre    string    `json:"cliente_nombre"`
-		ClienteTelefono  string    `json:"cliente_telefono"`
-		ClienteEmail     string    `json:"cliente_email"`
-		ValidezDias      int       `json:"validez_dias"`
-		Total            float64   `json:"total"`
-		Descuento        float64   `json:"descuento"`
-		Notas            string    `json:"notas"`
-		FechaCreacion    time.Time `json:"fecha_creacion"`
-		UsuarioNombre    string    `json:"usuario_nombre"`
-		SedeNombre       string    `json:"sede_nombre"`
-		SedeDireccion    string    `json:"sede_direccion"`
-	}
-
-	err = database.DB.QueryRow(`
-		SELECT c.numero_cotizacion, c.cliente_nombre, c.cliente_telefono, c.cliente_email,
-		       c.validez, c.total, c.descuento, c.notas, c.created_at,
-		       u.name, s.nombre, s.direccion
-		FROM cotizaciones c
-		INNER JOIN users u ON c.usuario_id = u.id
-		INNER JOIN sedes s ON c.sede_id = s.id
-		WHERE c.id = ?
-	`, id).Scan(&cot.NumeroCotizacion, &cot.ClienteNombre, &cot.ClienteTelefono, &cot.ClienteEmail,
-		&cot.ValidezDias, &cot.Total, &cot.Descuento, &cot.Notas, &cot.FechaCreacion,
-		&cot.UsuarioNombre, &cot.SedeNombre, &cot.SedeDireccion)
-
-	if err != nil {
+	cot, items, err := getCotizacionService().GetPDFData(id)
+	if err == services.ErrCotizacionNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Cotización not found"})
 		return
 	}
-
-	// Obtener items
-	itemRows, _ := database.DB.Query(`
-		SELECT p.codigo, p.name, p.brand, ci.cantidad, ci.precio_unit, ci.subtotal
-		FROM cotizacion_items ci
-		INNER JOIN products p ON ci.producto_id = p.id
-		WHERE ci.cotizacion_id = ?
-	`, id)
-	defer itemRows.Close()
-
-	type ItemPDF struct {
-		Codigo         string  `json:"codigo"`
-		Nombre         string  `json:"nombre"`
-		Marca          string  `json:"marca"`
-		Cantidad       int     `json:"cantidad"`
-		PrecioUnitario float64 `json:"precio_unitario"`
-		Subtotal       float64 `json:"subtotal"`
-	}
-
-	var items []ItemPDF
-	for itemRows.Next() {
-		var item ItemPDF
-		itemRows.Scan(&item.Codigo, &item.Nombre, &item.Marca, &item.Cantidad, &item.PrecioUnitario, &item.Subtotal)
-		items = append(items, item)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cotización"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"cotizacion": cot, "items": items})
