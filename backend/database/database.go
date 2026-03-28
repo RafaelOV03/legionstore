@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	//_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var DB *sql.DB
@@ -16,7 +17,8 @@ func InitDatabase() {
 	log.Println("Connecting to database...")
 
 	// Configurar SQLite para modo WAL para mejor concurrencia
-	DB, err = sql.Open("sqlite3", "./inventario.db?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000")
+	// Se cambio "sqlite3" por "sqlite".
+	DB, err = sql.Open("sqlite"/*"sqlite3"*/, "./inventario.db?cache=shared&mode=rwc&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -482,7 +484,37 @@ func CreateTables() error {
 
 	return nil
 }
+// cambios agregados 23/06/2024
+// PingDatabase verifica la conectividad con la base de datos
+func PingDatabase() error {
+	if DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	return DB.Ping()
+}
 
+// GetDBStats retorna estadísticas del pool de conexiones
+func GetDBStats() sql.DBStats {
+	if DB == nil {
+		return sql.DBStats{}
+	}
+	return DB.Stats()
+}
+
+// IsTableExists verifica si una tabla existe en la base de datos
+func IsTableExists(tableName string) (bool, error) {
+	if DB == nil {
+		return false, fmt.Errorf("database not initialized")
+	}
+	
+	var count int
+	query := "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?"
+	err := DB.QueryRow(query, tableName).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
 // CloseDB cierra la conexión a la base de datos
 func CloseDB() error {
 	if DB != nil {
