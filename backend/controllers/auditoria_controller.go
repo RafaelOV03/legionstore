@@ -46,9 +46,19 @@ func GetLogStats(c *gin.Context) {
 
 // GetReporteGanancias obtiene el reporte de ganancias
 func GetReporteGanancias(c *gin.Context) {
+	fechaDesde := c.Query("fecha_desde")
+	if fechaDesde == "" {
+		fechaDesde = c.Query("fecha_inicio")
+	}
+
+	fechaHasta := c.Query("fecha_hasta")
+	if fechaHasta == "" {
+		fechaHasta = c.Query("fecha_fin")
+	}
+
 	reporte, err := getAuditoriaService().ReporteGanancias(services.GananciasInput{
-		FechaDesde: c.DefaultQuery("fecha_desde", ""),
-		FechaHasta: c.DefaultQuery("fecha_hasta", ""),
+		FechaDesde: fechaDesde,
+		FechaHasta: fechaHasta,
 		SedeID:     c.Query("sede_id"),
 	})
 	if err != nil {
@@ -56,7 +66,56 @@ func GetReporteGanancias(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, reporte)
+	ingresosTotales := reporte.TotalVentas + reporte.TotalServicios
+	costosTotales := reporte.CostoProductos
+	gananciaNeta := ingresosTotales - costosTotales
+	margen := 0.0
+	if ingresosTotales > 0 {
+		margen = (gananciaNeta / ingresosTotales) * 100
+	}
+
+	porCategoria := make([]gin.H, 0, len(reporte.VentasPorCategoria))
+	for _, cat := range reporte.VentasPorCategoria {
+		porCategoria = append(porCategoria, gin.H{
+			"categoria": cat.Categoria,
+			"cantidad":  0,
+			"ingresos":  cat.Total,
+		})
+	}
+
+	porSede := make([]gin.H, 0, len(reporte.VentasPorSede))
+	for _, sede := range reporte.VentasPorSede {
+		sedeMargen := 0.0
+		if sede.Total > 0 {
+			sedeMargen = 100
+		}
+		porSede = append(porSede, gin.H{
+			"nombre":   sede.Sede,
+			"ingresos": sede.Total,
+			"costos":   0.0,
+			"ganancia": sede.Total,
+			"margen":   sedeMargen,
+		})
+	}
+
+	// Keep both legacy and refactored keys to avoid breaking existing frontends.
+	c.JSON(http.StatusOK, gin.H{
+		"ingresos_totales": ingresosTotales,
+		"costos_totales":   costosTotales,
+		"ganancia_neta":    gananciaNeta,
+		"margen_ganancia":  margen,
+		"por_categoria":    porCategoria,
+		"top_productos":    []gin.H{},
+		"por_sede":         porSede,
+
+		"total_ventas":         reporte.TotalVentas,
+		"costo_productos":      reporte.CostoProductos,
+		"ganancia_productos":   reporte.GananciaProductos,
+		"total_servicios":      reporte.TotalServicios,
+		"ganancia_total":       reporte.GananciaTotal,
+		"ventas_por_categoria": reporte.VentasPorCategoria,
+		"ventas_por_sede":      reporte.VentasPorSede,
+	})
 }
 
 // GetSegmentaciones obtiene las segmentaciones de clientes

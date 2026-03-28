@@ -248,7 +248,7 @@ func (r *AuditoriaRepository) CostoProductos(fechaDesde, fechaHasta, sedeID stri
 
 func (r *AuditoriaRepository) TotalServicios(fechaDesde, fechaHasta, sedeID string) (float64, error) {
 	query := `
-		SELECT COALESCE(SUM(costo_servicio + costo_repuestos), 0)
+		SELECT COALESCE(SUM(costo_mano_obra + costo_repuestos), 0)
 		FROM ordenes_trabajo
 		WHERE estado = 'entregado'
 	`
