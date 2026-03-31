@@ -14,7 +14,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Verificar si Docker Compose está instalado
-if ! command -v docker-compose &> /dev/null; then
+if ! docker compose version &> /dev/null; then
     echo "❌ Docker Compose no está instalado. Por favor instala Docker Compose."
     exit 1
 fi
@@ -29,12 +29,12 @@ fi
 # Construir imágenes
 echo ""
 echo "🔨 Construyendo imágenes Docker..."
-docker-compose build
+docker compose build
 
 # Iniciar servicios
 echo ""
 echo "🚀 Iniciando servicios..."
-docker-compose up -d
+docker compose up -d
 
 # Esperar a que los servicios estén listos
 echo ""
@@ -44,7 +44,7 @@ sleep 5
 # Mostrar estado
 echo ""
 echo "📊 Estado de los servicios:"
-docker-compose ps
+docker compose ps
 
 # Mostrar logs iniciales
 echo ""

@@ -161,6 +161,30 @@ func main() {
 		}
 
 		// ==========================================
+		// RUTAS DE CARRITO (sesión anónima)
+		// ==========================================
+		cart := api.Group("/cart")
+		{
+			cart.GET("", controllers.GetCart)
+			cart.POST("", controllers.AddToCart)
+			cart.PUT("/:id", controllers.UpdateCartItem)
+			cart.DELETE("/:id", controllers.RemoveFromCart)
+			cart.DELETE("", controllers.ClearCart)
+		}
+
+		// ==========================================
+		// RUTAS DE ÓRDENES (cliente autenticado)
+		// ==========================================
+		orders := api.Group("/orders")
+		orders.Use(middleware.AuthMiddleware())
+		{
+			orders.GET("", controllers.GetOrders)
+			orders.GET("/:id", controllers.GetOrder)
+			orders.POST("", controllers.CreateOrder)
+			orders.PUT("/:id", controllers.UpdateOrder)
+		}
+
+		// ==========================================
 		// RUTAS DE SEDES Y STOCK MULTISEDE
 		// ==========================================
 		sedes := api.Group("/sedes")
