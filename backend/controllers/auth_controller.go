@@ -1,17 +1,27 @@
 package controllers
 
 import (
-	"database/sql"
 	"net/http"
 	"smartech/backend/database"
 	"smartech/backend/errors"
 	"smartech/backend/middleware"
+<<<<<<< HEAD
 	"smartech/backend/models"
 	"smartech/backend/validation"
 	"time"
+=======
+	"smartech/backend/repositories"
+	"smartech/backend/services"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 
 	"github.com/gin-gonic/gin"
 )
+
+func getAuthService() *services.AuthService {
+	userRepo := repositories.NewUserRepository(database.DB)
+	roleRepo := repositories.NewRoleRepository(database.DB)
+	return services.NewAuthService(userRepo, roleRepo)
+}
 
 // Register registra un nuevo usuario
 func Register(c *gin.Context) {
@@ -35,6 +45,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Verificar si el email ya existe
 	var count int
 	err := database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", req.Email).Scan(&count)
@@ -111,18 +122,42 @@ func Register(c *gin.Context) {
 		permissions[i] = perm.Name
 	}
 
+=======
+	user, permissions, err := getAuthService().Register(services.RegisterInput{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err == services.ErrEmailAlreadyUsed {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+		return
+	}
+	if err == services.ErrDefaultRoleMissing {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Default role not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	// Generar token JWT
-	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(userRole.ID), userRole.Name, permissions)
+	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(user.Role.ID), user.Role.Name, permissions)
 	if err != nil {
 		apiErr := errors.NewInternal("Failed to generate JWT token")
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
+<<<<<<< HEAD
 	// Cargar user completo con role y permisos
 	user.Role = &userRole
 
 	c.JSON(201, gin.H{
+=======
+	c.JSON(http.StatusCreated, gin.H{
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		"message": "User registered successfully",
 		"user":    user,
 		"token":   token,
@@ -149,6 +184,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Buscar usuario por email
 	var user models.User
 	var isSystem int
@@ -199,8 +235,20 @@ func Login(c *gin.Context) {
 		permissions[i] = perm.Name
 	}
 
+=======
+	user, permissions, err := getAuthService().Login(services.LoginInput{Email: req.Email, Password: req.Password})
+	if err == services.ErrInvalidCredentials {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to authenticate user"})
+		return
+	}
+
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	// Generar token JWT
-	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(role.ID), role.Name, permissions)
+	token, err := middleware.GenerateToken(uint(user.ID), user.Email, uint(user.Role.ID), user.Role.Name, permissions)
 	if err != nil {
 		apiErr := errors.NewInternal("Failed to generate JWT token")
 		c.JSON(apiErr.Code, apiErr)
@@ -223,17 +271,21 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	var isSystem int
-	err := database.DB.QueryRow(`
-		SELECT u.id, u.created_at, u.updated_at, u.name, u.email, u.role_id
-		FROM users u
-		WHERE u.id = ?
-	`, userid).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt, &user.Name, &user.Email, &user.RoleID)
+	userID, ok := userid.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
+<<<<<<< HEAD
 	if err == sql.ErrNoRows {
 		apiErr := errors.NewNotFound("User", userid)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	user, err := getAuthService().GetCurrentUser(userID)
+	if err == services.ErrUserNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 	if err != nil {
@@ -241,18 +293,6 @@ func GetCurrentUser(c *gin.Context) {
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-
-	// Obtener rol con permisos
-	var role models.Role
-	database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, name, description, is_system
-		FROM roles
-		WHERE id = ?
-	`, user.RoleID).Scan(&role.ID, &role.CreatedAt, &role.UpdatedAt, &role.Name, &role.Description, &isSystem)
-
-	role.IsSystem = isSystem == 1
-	role.Permissions = getRolePermissions(role.ID)
-	user.Role = &role
 
 	c.JSON(http.StatusOK, user)
 }

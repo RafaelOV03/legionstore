@@ -1,28 +1,39 @@
 package controllers
 
 import (
+<<<<<<< HEAD
 	"database/sql"
+=======
+	"net/http"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"smartech/backend/database"
 	"smartech/backend/errors"
 	"smartech/backend/models"
+<<<<<<< HEAD
 	"smartech/backend/validation"
+=======
+	"smartech/backend/repositories"
+	"smartech/backend/services"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+func getProveedorService() *services.ProveedorService {
+	repo := repositories.NewProveedorRepository(database.DB)
+	return services.NewProveedorService(repo)
+}
+
 // GetProveedores obtiene todos los proveedores
 func GetProveedores(c *gin.Context) {
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, nombre, ruc, direccion, telefono, email, contacto, activo
-		FROM proveedores ORDER BY nombre
-	`)
+	proveedores, err := getProveedorService().ListProveedores()
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch providers", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
+<<<<<<< HEAD
 	defer rows.Close()
 
 	var proveedores []models.Proveedor
@@ -39,6 +50,9 @@ func GetProveedores(c *gin.Context) {
 	}
 
 	c.JSON(200, proveedores)
+=======
+	c.JSON(http.StatusOK, proveedores)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // GetProveedor obtiene un proveedor por ID con sus deudas
@@ -50,6 +64,7 @@ func GetProveedor(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	var p models.Proveedor
 	var activo int
 	err = database.DB.QueryRow(`
@@ -61,6 +76,11 @@ func GetProveedor(c *gin.Context) {
 	if err == sql.ErrNoRows {
 		apiErr := errors.NewNotFound("Proveedor", id)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	proveedor, deudas, totalDeuda, err := getProveedorService().GetProveedor(id)
+	if err == services.ErrProveedorNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Proveedor not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 	if err != nil {
@@ -68,8 +88,8 @@ func GetProveedor(c *gin.Context) {
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
-	p.Activo = activo == 1
 
+<<<<<<< HEAD
 	// Obtener deudas pendientes
 	deudaRows, _ := database.DB.Query(`
 		SELECT id, created_at, updated_at, num_factura, monto, monto_pagado, fecha_vence, estado, descripcion
@@ -111,6 +131,9 @@ func GetProveedor(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"proveedor": p, "deudas": deudas, "total_deuda": totalDeuda})
+=======
+	c.JSON(http.StatusOK, gin.H{"proveedor": proveedor, "deudas": deudas, "total_deuda": totalDeuda})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // CreateProveedor crea un nuevo proveedor
@@ -137,21 +160,30 @@ func CreateProveedor(c *gin.Context) {
 		return
 	}
 
-	result, err := database.DB.Exec(`
-		INSERT INTO proveedores (nombre, ruc, direccion, telefono, email, contacto, activo)
-		VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		req.Nombre, req.RucNit, req.Direccion, req.Telefono, req.Email, req.Contacto)
-
+	id, err := getProveedorService().CreateProveedor(models.Proveedor{
+		Nombre:    req.Nombre,
+		RucNit:    req.RucNit,
+		Direccion: req.Direccion,
+		Telefono:  req.Telefono,
+		Email:     req.Email,
+		Contacto:  req.Contacto,
+		Activo:    true,
+	})
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Insert provider", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
+<<<<<<< HEAD
 	proveedorID, _ := result.LastInsertId()
 	logAuditoria(c, "crear", "proveedor", proveedorID, "", req.Nombre)
 
 	c.JSON(201, gin.H{"id": proveedorID})
+=======
+	logAuditoria(c, "crear", "proveedor", id, "", req.Nombre)
+	c.JSON(http.StatusCreated, gin.H{"id": id})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // UpdateProveedor actualiza un proveedor
@@ -187,17 +219,15 @@ func UpdateProveedor(c *gin.Context) {
 		return
 	}
 
-	activo := 0
-	if req.Activo {
-		activo = 1
-	}
-
-	_, err = database.DB.Exec(`
-		UPDATE proveedores SET nombre = ?, ruc = ?, direccion = ?, telefono = ?, 
-		                       email = ?, contacto = ?, activo = ?, updated_at = CURRENT_TIMESTAMP 
-		WHERE id = ?`,
-		req.Nombre, req.RucNit, req.Direccion, req.Telefono, req.Email, req.Contacto, activo, id)
-
+	err = getProveedorService().UpdateProveedor(id, models.Proveedor{
+		Nombre:    req.Nombre,
+		RucNit:    req.RucNit,
+		Direccion: req.Direccion,
+		Telefono:  req.Telefono,
+		Email:     req.Email,
+		Contacto:  req.Contacto,
+		Activo:    req.Activo,
+	})
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Update provider", err)
 		c.JSON(apiErr.Code, apiErr)
@@ -226,6 +256,7 @@ func DeleteProveedor(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Verificar si tiene deudas pendientes
 	var deudasPendientes int
 	database.DB.QueryRow("SELECT COUNT(*) FROM deudas_proveedores WHERE proveedor_id = ? AND estado != 'pagada'", id).Scan(&deudasPendientes)
@@ -253,6 +284,15 @@ func DeleteProveedor(c *gin.Context) {
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Delete provider", err)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	err = getProveedorService().DeleteProveedor(id)
+	if err == services.ErrProveedorHasPendingDeudas {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No se puede eliminar un proveedor con deudas pendientes"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete proveedor"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 
@@ -265,71 +305,11 @@ func GetDeudas(c *gin.Context) {
 	estado := c.Query("estado")
 	proveedorID := c.Query("proveedor_id")
 
-	query := `
-		SELECT d.id, d.created_at, d.updated_at, d.proveedor_id, d.num_factura, d.monto,
-		       d.monto_pagado, d.fecha_vence, d.estado, d.descripcion,
-		       p.nombre as proveedor_nombre
-		FROM deudas_proveedores d
-		INNER JOIN proveedores p ON d.proveedor_id = p.id
-		WHERE 1=1
-	`
-	args := []interface{}{}
-
-	if estado != "" {
-		query += " AND d.estado = ?"
-		args = append(args, estado)
-	} else {
-		query += " AND d.estado != 'pagada'"
-	}
-	if proveedorID != "" {
-		query += " AND d.proveedor_id = ?"
-		args = append(args, proveedorID)
-	}
-
-	query += " ORDER BY d.fecha_vence"
-
-	rows, err := database.DB.Query(query, args...)
+	deudas, err := getProveedorService().ListDeudas(estado, proveedorID)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch provider debts", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	type DeudaView struct {
-		ID               int64      `json:"id"`
-		CreatedAt        time.Time  `json:"created_at"`
-		UpdatedAt        time.Time  `json:"updated_at"`
-		ProveedorID      int64      `json:"proveedor_id"`
-		NumeroFactura    string     `json:"numero_factura"`
-		MontoTotal       float64    `json:"monto_total"`
-		MontoPagado      float64    `json:"monto_pagado"`
-		MontoPendiente   float64    `json:"monto_pendiente"`
-		FechaVencimiento *time.Time `json:"fecha_vencimiento,omitempty"`
-		Estado           string     `json:"estado"`
-		Notas            string     `json:"notas"`
-		Proveedor        struct {
-			Nombre string `json:"nombre"`
-		} `json:"proveedor"`
-	}
-
-	var deudas []DeudaView
-	for rows.Next() {
-		var d DeudaView
-		var fechaVenc sql.NullTime
-		var provNombre string
-		err := rows.Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt, &d.ProveedorID, &d.NumeroFactura,
-			&d.MontoTotal, &d.MontoPagado, &fechaVenc, &d.Estado, &d.Notas,
-			&provNombre)
-		if err != nil {
-			continue
-		}
-		if fechaVenc.Valid {
-			d.FechaVencimiento = &fechaVenc.Time
-		}
-		d.MontoPendiente = d.MontoTotal - d.MontoPagado
-		d.Proveedor.Nombre = provNombre
-		deudas = append(deudas, d)
 	}
 
 	c.JSON(200, deudas)
@@ -359,22 +339,20 @@ func CreateDeuda(c *gin.Context) {
 		fechaVenc = nil
 	}
 
-	result, err := database.DB.Exec(`
-		INSERT INTO deudas_proveedores (proveedor_id, num_factura, monto, monto_pagado, 
-		                                fecha_vence, estado, descripcion)
-		VALUES (?, ?, ?, 0, ?, 'pendiente', ?)`,
-		req.ProveedorID, req.NumeroFactura, req.MontoTotal, fechaVenc, req.Notas)
-
+	deudaID, err := getProveedorService().CreateDeuda(req.ProveedorID, req.NumeroFactura, req.MontoTotal, fechaVenc, req.Notas)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Create provider debt", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	deudaID, _ := result.LastInsertId()
 	logAuditoria(c, "crear", "deuda_proveedor", deudaID, "", req.NumeroFactura)
+<<<<<<< HEAD
 
 	c.JSON(201, gin.H{"id": deudaID})
+=======
+	c.JSON(http.StatusCreated, gin.H{"id": deudaID})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // RegistrarPago registra un pago a una deuda
@@ -401,6 +379,7 @@ func RegistrarPago(c *gin.Context) {
 
 	userID, _ := c.Get("userid")
 
+<<<<<<< HEAD
 	// Verificar deuda
 	var montoTotal, montoPagado float64
 	err = database.DB.QueryRow("SELECT monto, monto_pagado FROM deudas_proveedores WHERE id = ?", id).Scan(&montoTotal, &montoPagado)
@@ -414,18 +393,19 @@ func RegistrarPago(c *gin.Context) {
 	if req.Monto > saldoPendiente {
 		apiErr := errors.NewBadRequest("El monto excede el saldo pendiente")
 		c.JSON(apiErr.Code, apiErr)
+=======
+	nuevoSaldo, estado, err := getProveedorService().RegistrarPago(id, req.Monto, req.MetodoPago, req.NumeroReferencia, userID)
+	if err == services.ErrDeudaNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Deuda not found"})
 		return
 	}
-
-	tx, _ := database.DB.Begin()
-
-	// Registrar pago
-	_, err = tx.Exec(`
-		INSERT INTO pagos_proveedores (deuda_id, monto, metodo, referencia, usuario_id)
-		VALUES (?, ?, ?, ?, ?)`,
-		id, req.Monto, req.MetodoPago, req.NumeroReferencia, userID)
-
+	if err == services.ErrPagoExcedeSaldo {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El monto excede el saldo pendiente"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
+		return
+	}
 	if err != nil {
+<<<<<<< HEAD
 		tx.Rollback()
 		apiErr := errors.NewDatabaseError("Register payment", err)
 		c.JSON(apiErr.Code, apiErr)
@@ -461,6 +441,14 @@ func RegistrarPago(c *gin.Context) {
 		"nuevo_saldo": montoTotal - nuevoMontoPagado,
 		"estado":      nuevoEstado,
 	})
+=======
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register pago"})
+		return
+	}
+
+	logAuditoria(c, "pago", "deuda_proveedor", id, "", strconv.FormatFloat(req.Monto, 'f', 2, 64))
+	c.JSON(http.StatusOK, gin.H{"message": "Pago registered successfully", "nuevo_saldo": nuevoSaldo, "estado": estado})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // GetPagosDeuda obtiene los pagos de una deuda
@@ -472,36 +460,11 @@ func GetPagosDeuda(c *gin.Context) {
 		return
 	}
 
-	rows, err := database.DB.Query(`
-		SELECT pp.id, pp.created_at, pp.monto, pp.metodo, pp.referencia, u.name
-		FROM pagos_proveedores pp
-		INNER JOIN users u ON pp.usuario_id = u.id
-		WHERE pp.deuda_id = ?
-		ORDER BY pp.created_at DESC
-	`, id)
+	pagos, err := getProveedorService().ListPagosDeuda(id)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch provider payments", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	type PagoView struct {
-		ID               int64   `json:"id"`
-		CreatedAt        string  `json:"created_at"`
-		Monto            float64 `json:"monto"`
-		FechaPago        string  `json:"fecha_pago"`
-		MetodoPago       string  `json:"metodo_pago"`
-		NumeroReferencia string  `json:"numero_referencia"`
-		UsuarioNombre    string  `json:"usuario_nombre"`
-	}
-
-	var pagos []PagoView
-	for rows.Next() {
-		var p PagoView
-		rows.Scan(&p.ID, &p.CreatedAt, &p.Monto, &p.MetodoPago, &p.NumeroReferencia, &p.UsuarioNombre)
-		p.FechaPago = p.CreatedAt // Use created_at as fecha_pago for frontend
-		pagos = append(pagos, p)
 	}
 
 	c.JSON(200, pagos)
@@ -509,63 +472,11 @@ func GetPagosDeuda(c *gin.Context) {
 
 // GetResumenDeudas obtiene un resumen de deudas por proveedor
 func GetResumenDeudas(c *gin.Context) {
-	// Obtener estadísticas generales
-	var totalDeuda float64
-	var pendientes, vencidas, pagadas int
-
-	database.DB.QueryRow(`
-		SELECT COALESCE(SUM(monto - monto_pagado), 0) FROM deudas_proveedores WHERE estado != 'pagada'
-	`).Scan(&totalDeuda)
-
-	database.DB.QueryRow(`
-		SELECT COUNT(*) FROM deudas_proveedores WHERE estado = 'pendiente'
-	`).Scan(&pendientes)
-
-	database.DB.QueryRow(`
-		SELECT COUNT(*) FROM deudas_proveedores WHERE estado != 'pagada' AND fecha_vence < DATE('now')
-	`).Scan(&vencidas)
-
-	database.DB.QueryRow(`
-		SELECT COUNT(*) FROM deudas_proveedores WHERE estado = 'pagada'
-	`).Scan(&pagadas)
-
-	// Obtener resumen por proveedor
-	rows, err := database.DB.Query(`
-		SELECT p.id, p.nombre, 
-		       COUNT(d.id) as num_facturas,
-		       COALESCE(SUM(d.monto - d.monto_pagado), 0) as saldo_total,
-		       MIN(d.fecha_vence) as proxima_fecha
-		FROM proveedores p
-		LEFT JOIN deudas_proveedores d ON p.id = d.proveedor_id AND d.estado != 'pagada'
-		WHERE p.activo = 1
-		GROUP BY p.id, p.nombre
-		HAVING saldo_total > 0
-		ORDER BY saldo_total DESC
-	`)
+	resumen, totalDeuda, pendientes, vencidas, pagadas, err := getProveedorService().ResumenDeudas()
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch debt summary", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	type ResumenProveedor struct {
-		ProveedorID  int64   `json:"proveedor_id"`
-		Nombre       string  `json:"nombre"`
-		NumFacturas  int     `json:"num_facturas"`
-		SaldoTotal   float64 `json:"saldo_total"`
-		ProximaFecha *string `json:"proxima_fecha"`
-	}
-
-	var resumen []ResumenProveedor
-	for rows.Next() {
-		var r ResumenProveedor
-		var fecha sql.NullString
-		rows.Scan(&r.ProveedorID, &r.Nombre, &r.NumFacturas, &r.SaldoTotal, &fecha)
-		if fecha.Valid {
-			r.ProximaFecha = &fecha.String
-		}
-		resumen = append(resumen, r)
 	}
 
 	c.JSON(200, gin.H{

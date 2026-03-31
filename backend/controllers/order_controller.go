@@ -1,25 +1,22 @@
 package controllers
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
 	"net/http"
-	"os"
 	"smartech/backend/database"
+<<<<<<< HEAD
 	"smartech/backend/errors"
 	"smartech/backend/models"
 	"smartech/backend/validation"
+=======
+	"smartech/backend/repositories"
+	"smartech/backend/services"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
+<<<<<<< HEAD
 // PayPalConfig contiene la configuración de PayPal
 type PayPalConfig struct {
 	Clientid string
@@ -88,6 +85,11 @@ func getPayPalAccessToken() (string, error) {
 	}
 
 	return token, nil
+=======
+func getOrderService() *services.OrderService {
+	repo := repositories.NewOrderRepository(database.DB)
+	return services.NewOrderService(repo)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // CreateOrder crea una orden de PayPal
@@ -108,6 +110,7 @@ func CreateOrder(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Obtener el carrito con items
 	var cart models.Cart
 	err := database.DB.QueryRow(`
@@ -209,25 +212,27 @@ func CreateOrder(c *gin.Context) {
 	if resp.StatusCode != http.StatusCreated {
 		apiErr := errors.NewInternal("PayPal order creation failed")
 		c.JSON(apiErr.Code, apiErr)
+=======
+	order, paypalOrder, err := getOrderService().CreateOrder(request.SessionID)
+	if err == services.ErrOrderCartNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Cart not found"})
 		return
 	}
-
-	// Extraer el id de la orden de PayPal
-	paypalOrderid, ok := paypalOrder["id"].(string)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get PayPal order id", "response": paypalOrder})
+	if err == services.ErrOrderCartEmpty {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cart is empty"})
 		return
 	}
-
-	log.Printf("Creating order with PayPal id: %s", paypalOrderid)
-
-	// Guardar orden en la base de datos
-	result, err := database.DB.Exec(`
-		INSERT INTO orders (session_id, paypal_order_id, status, total_amount, currency, finalized, created_at, updated_at)
-		VALUES (?, ?, 'PENDING', ?, 'USD', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, request.SessionID, paypalOrderid, total)
-
+	if err == services.ErrOrderPayPalToken {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get PayPal token"})
+		return
+	}
+	if err == services.ErrOrderPayPalCreate {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "PayPal order creation failed", "details": paypalOrder})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
+		return
+	}
 	if err != nil {
+<<<<<<< HEAD
 		apiErr := errors.NewDatabaseError("Insert order", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
@@ -262,8 +267,15 @@ func CreateOrder(c *gin.Context) {
 		Finalized:     false,
 	}
 
+=======
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save order", "details": err.Error()})
+		return
+	}
+
+	paypalID, _ := paypalOrder["id"].(string)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	c.JSON(http.StatusOK, gin.H{
-		"id":     paypalOrder["id"],
+		"id":     paypalID,
 		"order":  order,
 		"paypal": paypalOrder,
 	})
@@ -272,154 +284,29 @@ func CreateOrder(c *gin.Context) {
 // CaptureOrder captura el pago de una orden de PayPal
 func CaptureOrder(c *gin.Context) {
 	orderid := c.Param("id")
-	log.Printf("Capturing order with PayPal id: %s", orderid)
 
-	// Obtener token de PayPal
-	token, err := getPayPalAccessToken()
-	if err != nil {
-		log.Printf("Failed to get PayPal token: %v", err)
+	order, captureResult, err := getOrderService().CaptureOrder(orderid)
+	if err == services.ErrOrderPayPalToken {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get PayPal token"})
 		return
 	}
-
-	// Capturar el pago en PayPal
-	url := fmt.Sprintf("%s/v2/checkout/orders/%s/capture", paypalConfig.BaseURL, orderid)
-	req, _ := http.NewRequest("POST", url, nil)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to capture PayPal order"})
-		return
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var captureResult map[string]interface{}
-	if err := json.Unmarshal(body, &captureResult); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse PayPal response"})
-		return
-	}
-
-	if resp.StatusCode != http.StatusCreated {
+	if err == services.ErrOrderPayPalCapture {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "PayPal capture failed", "details": captureResult})
 		return
 	}
-
-	// Actualizar orden en la base de datos
-	var order models.Order
-	log.Printf("Searching for order with paypal_order_id = %s", orderid)
-	err = database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, session_id, paypal_order_id, status, total_amount, 
-		       currency, payer_email, payer_name, completed_at, finalized
-		FROM orders
-		WHERE paypal_order_id = ?
-	`, orderid).Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt, &order.SessionID, &order.PayPalOrderID,
-		&order.Status, &order.TotalAmount, &order.Currency, &order.PayerEmail, &order.PayerName,
-		&order.CompletedAt, &order.Finalized)
-
-	if err == sql.ErrNoRows {
-		log.Printf("Order not found in database: %v", err)
+	if err == services.ErrOrderNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found", "paypal_order_id": orderid})
 		return
 	}
 	if err != nil {
-		log.Printf("Failed to fetch order: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch order"})
-		return
-	}
-
-	now := time.Now()
-	payerEmail := ""
-	payerName := ""
-
-	// Extraer información del pagador
-	if payer, ok := captureResult["payer"].(map[string]interface{}); ok {
-		if email, ok := payer["email_address"].(string); ok {
-			payerEmail = email
-		}
-		if name, ok := payer["name"].(map[string]interface{}); ok {
-			if givenName, ok := name["given_name"].(string); ok {
-				payerName = givenName
-				if surname, ok := name["surname"].(string); ok {
-					payerName += " " + surname
-				}
-			}
-		}
-	}
-
-	// Actualizar orden
-	_, err = database.DB.Exec(`
-		UPDATE orders
-		SET status = 'COMPLETED', completed_at = ?, payer_email = ?, payer_name = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, now, payerEmail, payerName, order.ID)
-	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order"})
 		return
-	}
-
-	order.Status = "COMPLETED"
-	order.CompletedAt = &now
-	order.PayerEmail = payerEmail
-	order.PayerName = payerName
-
-	// Actualizar stock de productos
-	rows, err := database.DB.Query("SELECT product_id, quantity FROM order_items WHERE order_id = ?", order.ID)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var productID int64
-			var quantity int
-			if err := rows.Scan(&productID, &quantity); err == nil {
-				database.DB.Exec(`
-					UPDATE products
-					SET stock_quantity = stock_quantity - ?
-					WHERE id = ?
-				`, quantity, productID)
-			}
-		}
-	}
-
-	// Limpiar el carrito
-	var cartID int64
-	err = database.DB.QueryRow("SELECT id FROM carts WHERE session_id = ?", order.SessionID).Scan(&cartID)
-	if err == nil {
-		database.DB.Exec("DELETE FROM cart_items WHERE cart_id = ?", cartID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"order":   order,
 		"capture": captureResult,
 	})
-}
-
-// getOrderItemsWithProducts obtiene los items de una orden
-func getOrderItemsWithProducts(orderID int64) []models.OrderItem {
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, order_id, product_id, product_name, quantity, price
-		FROM order_items
-		WHERE order_id = ?
-	`, orderID)
-	if err != nil {
-		return []models.OrderItem{}
-	}
-	defer rows.Close()
-
-	var items []models.OrderItem
-	for rows.Next() {
-		var item models.OrderItem
-		err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt, &item.OrderID,
-			&item.ProductID, &item.ProductName, &item.Quantity, &item.Price)
-		if err != nil {
-			continue
-		}
-		items = append(items, item)
-	}
-	return items
 }
 
 // GetOrder obtiene los detalles de una orden
@@ -431,6 +318,7 @@ func GetOrder(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	var order models.Order
 	var finalized int
 	err := database.DB.QueryRow(`
@@ -445,6 +333,11 @@ func GetOrder(c *gin.Context) {
 	if err == sql.ErrNoRows {
 		apiErr := errors.NewNotFound("Order", orderid)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	order, err := getOrderService().GetOrder(orderid)
+	if err == services.ErrOrderNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 	if err != nil {
@@ -453,10 +346,14 @@ func GetOrder(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	order.Finalized = finalized == 1
 	order.OrderItems = getOrderItemsWithProducts(order.ID)
 
 	c.JSON(200, order)
+=======
+	c.JSON(http.StatusOK, order)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // GetOrders obtiene todas las órdenes de una sesión
@@ -468,33 +365,11 @@ func GetOrders(c *gin.Context) {
 		return
 	}
 
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, session_id, paypal_order_id, status, total_amount,
-		       currency, payer_email, payer_name, completed_at, finalized
-		FROM orders
-		WHERE session_id = ?
-		ORDER BY created_at DESC
-	`, sessionid)
+	orders, err := getOrderService().GetOrdersBySession(sessionid)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch orders", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var order models.Order
-		var finalized int
-		err := rows.Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt, &order.SessionID, &order.PayPalOrderID,
-			&order.Status, &order.TotalAmount, &order.Currency, &order.PayerEmail, &order.PayerName,
-			&order.CompletedAt, &finalized)
-		if err != nil {
-			continue
-		}
-		order.Finalized = finalized == 1
-		order.OrderItems = getOrderItemsWithProducts(order.ID)
-		orders = append(orders, order)
 	}
 
 	c.JSON(200, orders)
@@ -502,32 +377,11 @@ func GetOrders(c *gin.Context) {
 
 // GetAllOrders obtiene todas las órdenes del sistema (solo para administradores)
 func GetAllOrders(c *gin.Context) {
-	rows, err := database.DB.Query(`
-		SELECT id, created_at, updated_at, session_id, paypal_order_id, status, total_amount,
-		       currency, payer_email, payer_name, completed_at, finalized
-		FROM orders
-		ORDER BY created_at DESC
-	`)
+	orders, err := getOrderService().GetAllOrders()
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch all orders", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var order models.Order
-		var finalized int
-		err := rows.Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt, &order.SessionID, &order.PayPalOrderID,
-			&order.Status, &order.TotalAmount, &order.Currency, &order.PayerEmail, &order.PayerName,
-			&order.CompletedAt, &finalized)
-		if err != nil {
-			continue
-		}
-		order.Finalized = finalized == 1
-		order.OrderItems = getOrderItemsWithProducts(order.ID)
-		orders = append(orders, order)
 	}
 
 	c.JSON(http.StatusOK, orders)
@@ -541,35 +395,15 @@ func FinalizeOrder(c *gin.Context) {
 		return
 	}
 
-	// Verificar que la orden existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM orders WHERE id = ?", orderID).Scan(&count)
-	if err != nil || count == 0 {
+	order, err := getOrderService().FinalizeOrder(orderID)
+	if err == services.ErrOrderNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Orden no encontrada"})
 		return
 	}
-
-	_, err = database.DB.Exec(`
-		UPDATE orders SET finalized = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-	`, orderID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al finalizar orden"})
 		return
 	}
-
-	// Obtener la orden actualizada
-	var order models.Order
-	var finalized int
-	database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, session_id, paypal_order_id, status, total_amount,
-		       currency, payer_email, payer_name, completed_at, finalized
-		FROM orders
-		WHERE id = ?
-	`, orderID).Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt, &order.SessionID, &order.PayPalOrderID,
-		&order.Status, &order.TotalAmount, &order.Currency, &order.PayerEmail, &order.PayerName,
-		&order.CompletedAt, &finalized)
-
-	order.Finalized = finalized == 1
 
 	c.JSON(http.StatusOK, order)
 }
@@ -579,14 +413,6 @@ func UpdateOrder(c *gin.Context) {
 	orderid, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid order id"})
-		return
-	}
-
-	// Verificar que la orden existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM orders WHERE id = ?", orderid).Scan(&count)
-	if err != nil || count == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}
 
@@ -600,45 +426,15 @@ func UpdateOrder(c *gin.Context) {
 		return
 	}
 
-	// Actualizar campos
-	updates := []string{}
-	args := []interface{}{}
-
-	if req.Status != "" {
-		updates = append(updates, "status = ?")
-		args = append(args, req.Status)
+	order, err := getOrderService().UpdateOrder(orderid, req.Status, req.TotalAmount)
+	if err == services.ErrOrderNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
 	}
-	if req.TotalAmount > 0 {
-		updates = append(updates, "total_amount = ?")
-		args = append(args, req.TotalAmount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order"})
+		return
 	}
-
-	if len(updates) > 0 {
-		updates = append(updates, "updated_at = CURRENT_TIMESTAMP")
-		args = append(args, orderid)
-
-		query := "UPDATE orders SET " + strings.Join(updates, ", ") + " WHERE id = ?"
-		_, err := database.DB.Exec(query, args...)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order"})
-			return
-		}
-	}
-
-	// Recargar con items
-	var order models.Order
-	var finalized int
-	database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, session_id, paypal_order_id, status, total_amount,
-		       currency, payer_email, payer_name, completed_at, finalized
-		FROM orders
-		WHERE id = ?
-	`, orderid).Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt, &order.SessionID, &order.PayPalOrderID,
-		&order.Status, &order.TotalAmount, &order.Currency, &order.PayerEmail, &order.PayerName,
-		&order.CompletedAt, &finalized)
-
-	order.Finalized = finalized == 1
-	order.OrderItems = getOrderItemsWithProducts(order.ID)
 
 	c.JSON(http.StatusOK, order)
 }
@@ -651,23 +447,11 @@ func DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	// Verificar que la orden existe
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM orders WHERE id = ?", orderid).Scan(&count)
-	if err != nil || count == 0 {
+	err = getOrderService().DeleteOrder(orderid)
+	if err == services.ErrOrderNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}
-
-	// Eliminar items de la orden primero
-	_, err = database.DB.Exec("DELETE FROM order_items WHERE order_id = ?", orderid)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete order items"})
-		return
-	}
-
-	// Eliminar la orden
-	_, err = database.DB.Exec("DELETE FROM orders WHERE id = ?", orderid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete order"})
 		return
@@ -679,6 +463,6 @@ func DeleteOrder(c *gin.Context) {
 // GetPayPalConfig devuelve el Client id para el frontend
 func GetPayPalConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"clientId": paypalConfig.Clientid,
+		"clientId": getOrderService().GetPayPalClientID(),
 	})
 }

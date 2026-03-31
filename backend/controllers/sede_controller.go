@@ -1,36 +1,37 @@
 package controllers
 
 import (
+<<<<<<< HEAD
 	"database/sql"
+=======
+	"net/http"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"smartech/backend/database"
 	"smartech/backend/errors"
 	"smartech/backend/models"
+<<<<<<< HEAD
 	"smartech/backend/validation"
+=======
+	"smartech/backend/repositories"
+	"smartech/backend/services"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
+func getSedeService() *services.SedeService {
+	repo := repositories.NewSedeRepository(database.DB)
+	return services.NewSedeService(repo)
+}
+
 // GetSedes obtiene todas las sedes
 func GetSedes(c *gin.Context) {
-	rows, err := database.DB.Query(`SELECT id, created_at, updated_at, nombre, direccion, telefono, activa FROM sedes ORDER BY nombre`)
+	sedes, err := getSedeService().ListSedes()
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch locations", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	var sedes []models.Sede
-	for rows.Next() {
-		var sede models.Sede
-		var activa int
-		err := rows.Scan(&sede.ID, &sede.CreatedAt, &sede.UpdatedAt, &sede.Nombre, &sede.Direccion, &sede.Telefono, &activa)
-		if err != nil {
-			continue
-		}
-		sede.Activa = activa == 1
-		sedes = append(sedes, sede)
 	}
 
 	c.JSON(200, sedes)
@@ -45,6 +46,7 @@ func GetSede(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	var sede models.Sede
 	var activa int
 	err = database.DB.QueryRow(`SELECT id, created_at, updated_at, nombre, direccion, telefono, activa FROM sedes WHERE id = ?`, id).
@@ -53,6 +55,11 @@ func GetSede(c *gin.Context) {
 	if err == sql.ErrNoRows {
 		apiErr := errors.NewNotFound("Sede", id)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	sede, err := getSedeService().GetSede(id)
+	if err == repositories.ErrSedeNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sede not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 	if err != nil {
@@ -60,9 +67,13 @@ func GetSede(c *gin.Context) {
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
+<<<<<<< HEAD
 
 	sede.Activa = activa == 1
 	c.JSON(200, sede)
+=======
+	c.JSON(http.StatusOK, sede)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // CreateSede crea una nueva sede
@@ -90,21 +101,21 @@ func CreateSede(c *gin.Context) {
 		return
 	}
 
-	result, err := database.DB.Exec(`INSERT INTO sedes (nombre, direccion, telefono, activa) VALUES (?, ?, ?, ?)`,
-		sede.Nombre, sede.Direccion, sede.Telefono, 1)
+	createdSede, err := getSedeService().CreateSede(sede)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Insert location", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
 
-	sede.ID, _ = result.LastInsertId()
-	sede.Activa = true
-
 	// Log de auditoría
-	logAuditoria(c, "crear", "sede", sede.ID, "", sede.Nombre)
+	logAuditoria(c, "crear", "sede", createdSede.ID, "", createdSede.Nombre)
 
+<<<<<<< HEAD
 	c.JSON(201, sede)
+=======
+	c.JSON(http.StatusCreated, createdSede)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // UpdateSede actualiza una sede
@@ -131,23 +142,26 @@ func UpdateSede(c *gin.Context) {
 		return
 	}
 
-	activa := 0
-	if sede.Activa {
-		activa = 1
+	updatedSede, err := getSedeService().UpdateSede(id, sede)
+	if err == repositories.ErrSedeNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sede not found"})
+		return
 	}
-
-	_, err = database.DB.Exec(`UPDATE sedes SET nombre = ?, direccion = ?, telefono = ?, activa = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		sede.Nombre, sede.Direccion, sede.Telefono, activa, id)
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Update location", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
+	logAuditoria(c, "editar", "sede", id, "", updatedSede.Nombre)
 
+<<<<<<< HEAD
 	sede.ID = id
 	logAuditoria(c, "editar", "sede", id, "", sede.Nombre)
 
 	c.JSON(200, sede)
+=======
+	c.JSON(http.StatusOK, updatedSede)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // DeleteSede elimina una sede
@@ -167,16 +181,24 @@ func DeleteSede(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Verificar que no haya usuarios o stock asociados
 	var count int
 	database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE sede_id = ?", id).Scan(&count)
 	if count > 0 {
 		apiErr := errors.NewConflict("Location has associated users")
 		c.JSON(apiErr.Code, apiErr)
+=======
+	err = getSedeService().DeleteSede(id)
+	if err == repositories.ErrSedeHasAssociatedUsers {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No se puede eliminar la sede, tiene usuarios asociados"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
-
-	_, err = database.DB.Exec("DELETE FROM sedes WHERE id = ?", id)
+	if err == repositories.ErrSedeNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sede not found"})
+		return
+	}
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Delete location", err)
 		c.JSON(apiErr.Code, apiErr)
@@ -186,6 +208,7 @@ func DeleteSede(c *gin.Context) {
 	logAuditoria(c, "eliminar", "sede", id, "", "")
 	c.JSON(200, gin.H{"message": "Sede deleted successfully"})
 }
+<<<<<<< HEAD
 
 // GetStockMultisede obtiene el stock de todos los productos en todas las sedes
 func GetStockMultisede(c *gin.Context) {
@@ -326,3 +349,5 @@ func UpdateStock(c *gin.Context) {
 	logAuditoria(c, "actualizar_stock", "stock_sedes", req.ProductoID, "", "")
 	c.JSON(200, gin.H{"message": "Stock updated successfully"})
 }
+=======
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7

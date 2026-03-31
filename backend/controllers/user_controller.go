@@ -1,94 +1,36 @@
 package controllers
 
 import (
+<<<<<<< HEAD
 	"database/sql"
 	"smartech/backend/database"
 	"smartech/backend/errors"
 	"smartech/backend/models"
 	"smartech/backend/validation"
+=======
+	"net/http"
+	"smartech/backend/database"
+	"smartech/backend/repositories"
+	"smartech/backend/services"
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// getUserWithRole obtiene un usuario con su rol y permisos
-func getUserWithRole(userID int64) (*models.User, error) {
-	var user models.User
-	var isSystem int
-
-	err := database.DB.QueryRow(`
-		SELECT u.id, u.created_at, u.updated_at, u.name, u.email, u.password, u.role_id
-		FROM users u
-		WHERE u.id = ?
-	`, userID).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt, &user.Name, &user.Email, &user.Password, &user.RoleID)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Obtener rol con permisos
-	var role models.Role
-	err = database.DB.QueryRow(`
-		SELECT id, created_at, updated_at, name, description, is_system
-		FROM roles
-		WHERE id = ?
-	`, user.RoleID).Scan(&role.ID, &role.CreatedAt, &role.UpdatedAt, &role.Name, &role.Description, &isSystem)
-
-	if err == nil {
-		role.IsSystem = isSystem == 1
-		role.Permissions = getRolePermissions(role.ID)
-		user.Role = &role
-	}
-
-	return &user, nil
+func getUserService() *services.UserService {
+	userRepo := repositories.NewUserRepository(database.DB)
+	roleRepo := repositories.NewRoleRepository(database.DB)
+	return services.NewUserService(userRepo, roleRepo)
 }
 
 // GetUsers obtiene todos los usuarios
 func GetUsers(c *gin.Context) {
-	rows, err := database.DB.Query(`
-		SELECT u.id, u.created_at, u.updated_at, u.name, u.email, u.password, u.role_id,
-		       r.id, r.created_at, r.updated_at, r.name, r.description, r.is_system
-		FROM users u
-		INNER JOIN roles r ON u.role_id = r.id
-		ORDER BY u.created_at DESC
-	`)
+	users, err := getUserService().ListUsers()
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Fetch users", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
-	}
-	defer rows.Close()
-
-	var users []models.User
-	roleMap := make(map[int64]*models.Role)
-
-	for rows.Next() {
-		var user models.User
-		var role models.Role
-		var isSystem int
-
-		err := rows.Scan(
-			&user.ID, &user.CreatedAt, &user.UpdatedAt, &user.Name, &user.Email, &user.Password, &user.RoleID,
-			&role.ID, &role.CreatedAt, &role.UpdatedAt, &role.Name, &role.Description, &isSystem,
-		)
-		if err != nil {
-			continue
-		}
-
-		role.IsSystem = isSystem == 1
-
-		// Cache role to avoid loading permissions multiple times
-		if cachedRole, exists := roleMap[role.ID]; exists {
-			user.Role = cachedRole
-		} else {
-			role.Permissions = getRolePermissions(role.ID)
-			rolePtr := &role
-			roleMap[role.ID] = rolePtr
-			user.Role = rolePtr
-		}
-
-		users = append(users, user)
 	}
 
 	c.JSON(200, users)
@@ -103,10 +45,16 @@ func GetUser(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	user, err := getUserWithRole(id)
 	if err == sql.ErrNoRows {
 		apiErr := errors.NewNotFound("User", id)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	user, err := getUserService().GetUser(id)
+	if err == services.ErrUserNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		return
 	}
 	if err != nil {
@@ -140,6 +88,7 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Verificar si el email ya existe
 	var count int
 	err := database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", req.Email).Scan(&count)
@@ -179,11 +128,28 @@ func CreateUser(c *gin.Context) {
 		INSERT INTO users (name, email, password, role_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`, user.Name, user.Email, user.Password, user.RoleID)
+=======
+	createdUser, err := getUserService().CreateUser(services.CreateUserInput{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: req.Password,
+		RoleID:   req.RoleID,
+	})
+	if err == services.ErrEmailAlreadyUsed {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+		return
+	}
+	if err == services.ErrInvalidRoleID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role id"})
+		return
+	}
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Create user", err)
 		c.JSON(apiErr.Code, apiErr)
 		return
 	}
+<<<<<<< HEAD
 
 	userID, err := result.LastInsertId()
 	if err != nil {
@@ -195,6 +161,9 @@ func CreateUser(c *gin.Context) {
 	// Obtener el usuario creado con role
 	createdUser, _ := getUserWithRole(userID)
 	c.JSON(201, createdUser)
+=======
+	c.JSON(http.StatusCreated, createdUser)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // UpdateUser actualiza un usuario
@@ -206,6 +175,7 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
+<<<<<<< HEAD
 	// Verificar que el usuario existe
 	var count int
 	err = database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", id).Scan(&count)
@@ -215,6 +185,8 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
+=======
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 	var req struct {
 		Name     *string `json:"name"`
 		Email    *string `json:"email"`
@@ -228,14 +200,17 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
-	updates := []string{}
-	args := []interface{}{}
-
-	// Actualizar campos
-	if req.Name != nil && *req.Name != "" {
-		updates = append(updates, "name = ?")
-		args = append(args, *req.Name)
+	updatedUser, err := getUserService().UpdateUser(id, services.UpdateUserInput{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: req.Password,
+		RoleID:   req.RoleID,
+	})
+	if err == services.ErrUserNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
 	}
+<<<<<<< HEAD
 	if req.Email != nil && *req.Email != "" {
 		// Verificar que el email no esté en uso por otro usuario
 		var emailCount int
@@ -287,6 +262,21 @@ func UpdateUser(c *gin.Context) {
 	// Obtener el usuario actualizado
 	updatedUser, _ := getUserWithRole(id)
 	c.JSON(200, updatedUser)
+=======
+	if err == services.ErrEmailAlreadyUsed {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already in use"})
+		return
+	}
+	if err == services.ErrInvalidRoleID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role id"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		return
+	}
+	c.JSON(http.StatusOK, updatedUser)
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 }
 
 // DeleteUser elimina un usuario
@@ -298,8 +288,8 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// No permitir eliminar el propio usuario
 	userid, _ := c.Get("userid")
+<<<<<<< HEAD
 	if userIDUint, ok := userid.(uint); ok && int64(userIDUint) == id {
 		apiErr := errors.ErrForbidden
 		c.JSON(apiErr.Code, apiErr)
@@ -312,10 +302,19 @@ func DeleteUser(c *gin.Context) {
 	if err != nil || count == 0 {
 		apiErr := errors.NewNotFound("User", id)
 		c.JSON(apiErr.Code, apiErr)
+=======
+	actorUserID, _ := userid.(uint)
+
+	err = getUserService().DeleteUser(id, actorUserID)
+	if err == services.ErrCannotDeleteSelf {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete your own user"})
 		return
 	}
-
-	_, err = database.DB.Exec("DELETE FROM users WHERE id = ?", id)
+	if err == services.ErrUserNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
+		return
+	}
 	if err != nil {
 		apiErr := errors.NewDatabaseError("Delete user", err)
 		c.JSON(apiErr.Code, apiErr)
