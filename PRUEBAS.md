@@ -1,14 +1,14 @@
 ## Comandos
 
-Pruebas de integridad y condiciones de carrera:
+Pruebas de permisos:
 ```bash
-python tests/integridad.py
+python tests/permisos.py
 ```
 Pruebas de estrés:
 ```bash
 python tests/estres.py
 ```
-Pruebas de seguridad:
+Pruebas de integridad y condiciones de carrera:
 ```bash
-python tests/seguridad.py
+python tests/integridad.py
 ```
