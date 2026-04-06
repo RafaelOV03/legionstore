@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Form, Badge, Spinner, Alert, InputGroup, Button } from 'react-bootstrap';
 import { Search, ClipboardData, Clock, Person, Activity } from 'react-bootstrap-icons';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Auditoria() {
   const [logs, setLogs] = useState([]);

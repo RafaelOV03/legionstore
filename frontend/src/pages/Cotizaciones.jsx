@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Modal, Form, Badge, Spinner, Alert, InputGroup } from 'react-bootstrap';
 import { Plus, Pencil, Trash, Search, Receipt, FileEarmarkPdf, Cart } from 'react-bootstrap-icons';
 import { useAuth } from '../context/AuthContext';
-import * as api from '../services/inventarioApi';
+import * as api from '../services/resourceApi';
 
 function Cotizaciones() {
   const { hasPermission, user } = useAuth();

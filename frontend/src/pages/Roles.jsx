@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Table, Button, Modal, Form, Alert, Badge, Card, Row, Col, ListGroup } from 'react-bootstrap';
 import { PencilSquare, Trash, PlusCircle, ShieldCheck, CheckCircleFill } from 'react-bootstrap-icons';
-import { getRoles, getPermissions, createRole, updateRole, deleteRole } from '../services/api';
+import { getRoles, getPermissions, createRole, updateRole, deleteRole } from '../services/resourceApi';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 

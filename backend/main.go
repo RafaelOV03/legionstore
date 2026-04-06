@@ -6,10 +6,66 @@ import (
 	"smartech/backend/controllers"
 	"smartech/backend/database"
 	"smartech/backend/middleware"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
+<<<<<<< HEAD
+func init() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("INFO: No .env file found, using environment variables")
+	} else {
+		log.Println("INFO: .env file loaded successfully")
+	}
+	
+	// Debug: Print loaded environment variables
+	port := os.Getenv("PORT")
+	dbPath := os.Getenv("DB_PATH")
+	log.Printf("DEBUG: PORT=%s, DB_PATH=%s\n", port, dbPath)
+}
+
+// CorsMiddleware es un middleware para manejar CORS
+func CorsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		corsOrigins := os.Getenv("CORS_ORIGINS")
+		if corsOrigins == "" {
+			corsOrigins = "http://localhost:5173" // Default para desarrollo
+		}
+
+		// Procesar orígenes (formato: "origin1,origin2,origin3")
+		allowedOrigins := []string{}
+		if corsOrigins != "*" {
+			allowedOrigins = strings.Split(strings.TrimSpace(corsOrigins), ",")
+			// Limpiar espacios en blanco de cada origen
+			for i := range allowedOrigins {
+				allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+			}
+		}
+
+		// Obtener el origen de la solicitud
+		requestOrigin := c.Request.Header.Get("Origin")
+
+		// Permitir si es wildcard o si el origen está en la lista
+		if corsOrigins == "*" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		} else {
+			// Verificar si el origen está permitido
+			for _, allowed := range allowedOrigins {
+				if requestOrigin == allowed {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", allowed)
+					break
+				}
+			}
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+=======
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 
 
 /*
@@ -24,23 +80,57 @@ func main() {
 	database.InitDatabase()
 	log.Println("Database initialized.")
 
+	// Inicializar repositorios
+	log.Println("Initializing repositories...")
+	controllers.InitProductRepository()
+	log.Println("Repositories initialized.")
+
 	// Crear el router de Gin
 	log.Println("Creating Gin router...")
 	router := gin.Default()
 	log.Println("Gin router created.")
+
+	// Usar middleware de manejo de errores (debe ser primero)
+	log.Println("Using error handling middleware...")
+	router.Use(middleware.ErrorHandlingMiddleware())
+	router.Use(middleware.JSONErrorMiddleware())
+	log.Println("Error handling middleware used.")
 
 	// Usar el middleware de CORS
 	log.Println("Using CORS middleware...")
 	router.Use(middleware.CorsMiddleware())
 	log.Println("CORS middleware used.")
 
+	// Configurar Gin mode desde ENV
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode != "" {
+		gin.SetMode(ginMode)
+	}
+
 	// Agrupar las rutas de la API
 	log.Println("Grouping API routes...")
 	api := router.Group("/api")
 	{
+<<<<<<< HEAD
+		// ==========================================
+		// HEALTH CHECK (sin autenticación)
+		// ==========================================
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"status": "ok",
+				"service": "legionstore-backend",
+				"timestamp": time.Now().Unix(),
+			})
+		})
+
+		// ==========================================
+		// RUTAS DE AUTENTICACIÓN (públicas)
+		// ==========================================
+=======
 		// ------------------------------------------
 		// MÓDULO 1: GESTIÓN DE ACCESO (Auth)
 		// ------------------------------------------
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", controllers.Register)
@@ -77,9 +167,39 @@ func main() {
 			upload.DELETE("/image", middleware.AuthMiddleware(), middleware.RequirePermission("products.delete"), controllers.DeleteProductImage)
 		}
 
+<<<<<<< HEAD
+		// ==========================================
+		// RUTAS DE CARRITO (sesión anónima)
+		// ==========================================
+		cart := api.Group("/cart")
+		{
+			cart.GET("", controllers.GetCart)
+			cart.POST("", controllers.AddToCart)
+			cart.PUT("/:id", controllers.UpdateCartItem)
+			cart.DELETE("/:id", controllers.RemoveFromCart)
+			cart.DELETE("", controllers.ClearCart)
+		}
+
+		// ==========================================
+		// RUTAS DE ÓRDENES (cliente autenticado)
+		// ==========================================
+		orders := api.Group("/orders")
+		orders.Use(middleware.AuthMiddleware())
+		{
+			orders.GET("", controllers.GetOrders)
+			orders.GET("/:id", controllers.GetOrder)
+			orders.POST("", controllers.CreateOrder)
+			orders.PUT("/:id", controllers.UpdateOrder)
+		}
+
+		// ==========================================
+		// RUTAS DE SEDES Y STOCK MULTISEDE
+		// ==========================================
+=======
 		// ------------------------------------------
 		// MÓDULO 4: VENTAS Y LOGÍSTICA (Cotizaciones, Traspasos, RMA)
 		// ------------------------------------------
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7
 		sedes := api.Group("/sedes")
 		sedes.Use(middleware.AuthMiddleware())
 		{
@@ -284,6 +404,19 @@ func main() {
 	// Servir archivos estáticos del directorio uploads
     router.Static("/uploads", "./uploads")
 
+<<<<<<< HEAD
+	// Obtener puerto desde ENV
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Puerto por defecto
+	}
+
+	// Iniciar el servidor
+	log.Printf("Starting server on port %s...\n", port)
+	log.Println("Sistema de Gestión de Inventario - Backend listo")
+	router.Run(":" + port)
+}
+=======
     // --- CONFIGURACIÓN DE ARRANQUE ---
     
     // Obtener el puerto de las variables de entorno o usar 8080 por defecto
@@ -302,3 +435,4 @@ func main() {
     // Iniciar el servidor con el puerto configurado
     router.Run(":" + port)
 }
+>>>>>>> 56ef4a99558720e22eaa0ffde0aef19a608948d7

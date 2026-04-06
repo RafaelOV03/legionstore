@@ -7,7 +7,23 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Gin Configuration
       - GIN_MODE=debug
+      - PORT=8080
+      
+      # JWT Configuration
+      - JWT_SECRET=dev-secret-key-legionstore-2026
+      
+      # PayPal Configuration (Sandbox)
+      - PAYPAL_CLIENT_ID=sandbox-client-id
+      - PAYPAL_SECRET=sandbox-secret
+      - PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com
+      
+      # Database Configuration
+      - DB_PATH=./legionstore.db
+      
+      # CORS Configuration
+      - CORS_ORIGINS=http://localhost:5173
     volumes:
       - ./backend:/app
       - go_dir:/go
@@ -30,6 +46,7 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
+      - /app/node_modules  # Volumen anónimo para proteger node_modules
     depends_on:
       - backend
     networks:

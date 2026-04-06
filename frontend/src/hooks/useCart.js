@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getCart } from '../services/api';
+import { getCart } from '../services/resourceApi';
 
 export const useCart = () => {
   const [cart, setCart] = useState({ items: [] });

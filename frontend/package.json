@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "compile:bootstrap": "sass src/custom-bootstrap.scss src/assets/bootstrap-custom.css --no-source-map",
-    "dev": "npm run compile:bootstrap && vite",
+    "compile:bootstrap": "sass src/custom-bootstrap.scss src/assets/bootstrap-custom.css --load-path=node_modules --no-source-map || true",
+    "dev": "npm run compile:bootstrap; vite",
     "build": "npm run compile:bootstrap && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Card, Row, Col, Badge, Table, Spinner, Alert, Button } from 'react-bootstrap';
 import { BoxSeam, Calendar, CurrencyDollar, Receipt, ChevronDown, ChevronUp } from 'react-bootstrap-icons';
-import { getOrders } from '../services/api';
+import { getOrders } from '../services/resourceApi';
 import { useNavigate } from 'react-router-dom';
 
 function MyOrders() {
