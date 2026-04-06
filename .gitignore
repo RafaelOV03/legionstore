@@ -2,7 +2,8 @@ build/*
 .env
 */node_modules
 */package-lock.json
-backend/inventario.db
-backend/inventario.db-shm
-backend/inventario.db-wal
+*.db
+*.db-shm
+*.db-wal
+*.exe
 frontend/dist

@@ -45,7 +45,7 @@ go run main.go
 El servidor estará disponible en `http://localhost:8080`
 
 **Usuario administrador por defecto:**
-- Email: `admin@smartech.com`
+- Email: `admin@inventario.com`
 - Contraseña: `admin123`
 
 ### Frontend
